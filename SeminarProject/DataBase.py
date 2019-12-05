@@ -66,7 +66,7 @@ class MYSQLDatabase(object):
             for column in columns:
                 columnEntries[column[0].lower()] = self.__ColToDictKey(column)
             self.__tables[table] = columnEntries
-
+        
         # Create map for existing schemas:
         self.__schemas = { }
         # Get all existing schemas in the database:
@@ -76,6 +76,8 @@ class MYSQLDatabase(object):
             self.__schemas[db[0].lower()] = True
         
         cursor.close()
+        # Set the active schema that gets switched whenever a different schema is queried:
+        self.__activeSchema = schema
 
     def __del__(self):
         """
@@ -91,7 +93,7 @@ class MYSQLDatabase(object):
     #######################################
     def CreateSchema(self, schema):
         """
-        * Create schema if exists for current mysql instance.
+        * Create schema if does not exist for current mysql instance.
         """
         if not isinstance(schema, str):
             raise Exception("schema must be a string.")
@@ -110,18 +112,20 @@ class MYSQLDatabase(object):
         except Exception:
             pass
 
-    def CreateTable(self, tableName, schema, columns):
+    def CreateTable(self, tableName, columns, schema = None):
         """
         * Create table with name for given database, with columns and types specified as strings
         in the columnNameToType map. If table exists then will skip creation. 
         Inputs:
         * tableName: String to name table.
-        * schema: String with name of database.
+        * schema: String with name of database (if omitted uses ActiveSchema).
         * columns: Dictionary mapping { ColumnName -> (Type [Str], IsPKey [Bool], FKeyRef [Str]) }.
         If IsPKey is true then column will be primary key of table. If FKeyRef is not 
         blank then column will be foreign key referencing passed table (as RefTable(Column).
         """
         # Validate function inputs:
+        if not schema:
+            schema = self.ActiveSchema
         errMsgs = self.__CheckParams(tableName, schema, columns)
         if len(errMsgs) > 0:
             raise Exception('\n'.join(errMsgs))
@@ -176,13 +180,15 @@ class MYSQLDatabase(object):
         self.__tables[tableName] = columns
         cursor.close()
         
-    def ExecuteQuery(self, schema, query, getResults = False, shouldCommit = False):
+    def ExecuteQuery(self, query, schema = None, getResults = False, shouldCommit = False):
         """
         * Execute query on passed table for given schema.
         Input:
         * schema: Expecting string naming existing schema in mysql instance.
         * query: Expecting string with query for schema.
         """
+        if not schema:
+            schema = self.ActiveSchema
         query = query.lower()
         connect = self.__Reconnect(schema)
         cursor = connect.cursor()
@@ -225,7 +231,7 @@ class MYSQLDatabase(object):
 
             return output
 
-    def InsertValues(self, tableName, schema, columns):
+    def InsertValues(self, tableName, columns, schema = None):
         """
         * Insert all values into the create database. 
         Inputs:
@@ -234,6 +240,8 @@ class MYSQLDatabase(object):
         uniform for all columns.
         """
         # Validate function parameters:
+        if not schema:
+            schema = self.ActiveSchema
         errMsgs = self.__CheckParams(tableName, schema, columns)
         if len(errMsgs) > 0:
             raise Exception('\n'.join(errMsgs))
@@ -280,11 +288,13 @@ class MYSQLDatabase(object):
         connect.commit()
         cursor.close()
 
-    def PrintSelectToCSV(self, query, schema, csvPath):
+    def PrintSelectToCSV(self, query, csvPath, schema = None):
         """
         * Print select statement to specified CSV.
         """
         errMsgs = []
+        if not schema:
+            schema = self.ActiveSchema
         if os.path.exists(csvPath):
             errMsgs.append("csv at csvPath already exists.")
         if "select" not in query or "SELECT" not in query:
@@ -311,19 +321,26 @@ class MYSQLDatabase(object):
     # Accessors:
     #######################
     @property
+    def ActiveSchema(self):
+        """
+        * Return the schema most recently connected to.
+        """
+        return self.__activeSchema
+    @property
     def Tables(self):
         """
         * Return copy of tables in database (as dictionary mapping of tables to column attributes).
         """
         return self.__tables.copy()
-    
     @property
     def Schemas(self):
         """
         * Return copy of schemas in the database (as list containing all schema names).
         """
         return list(self.__schemas.keys()).copy()
-
+    @ActiveSchema.setter
+    def ActiveSchema(self, schema):
+        pass
     #######################
     # Helper Functions:
     #######################

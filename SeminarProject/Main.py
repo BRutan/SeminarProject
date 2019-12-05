@@ -32,5 +32,6 @@ def PullTickersCreateTables():
 if __name__ == '__main__':
     tickerPath = "C:\\Users\\rutan\\OneDrive\\Desktop\\Fordham MSQF Courses\\Research Seminar\\Project\\Project\\XLY_All_Holdings.csv"
     db = DataBase.MYSQLDatabase("root", "Correlation$", "127.0.0.1", "Research_Seminar_Project")
-    doc = Corporate10KDocument('aapl', '20181231')
     seminar = SeminarProject(tickerPath, db)
+    seminar.ExecuteAll()
+

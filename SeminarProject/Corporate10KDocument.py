@@ -28,19 +28,18 @@ class Corporate10KDocument(object):
     __itemRE = re.compile(__itemREStr)
     __itemTitleRE = re.compile(__titleREStr)
     __tagTextRE = re.compile('.*>.*<.*') 
-    def __init__(self, ticker, date, localDocPath = None, localSoupPath = None):
+    def __init__(self, ticker, yearEndDate, localDocPath = None, localSoupPath = None):
         """
         * Create new object. Pull from local file if localPath specified,
         (using predetermined format) or pull from 
         """
         self.Sections = {}
         self.Ticker = ticker
-        self.Date = date
+        self.Date = yearEndDate
         self.__itemMap = {}
         self.__sectionToItemMap = {}
         # Pull text from SEC Edgar website, load into object:
         self.__Pull10KText(localDocPath, localSoupPath)
-        self.WriteToFile()
 
     @property
     def Name(self):
@@ -125,13 +124,13 @@ class Corporate10KDocument(object):
         with open(path, 'r') as f:
             reader = csv.reader(f)
 
-    def WriteSoupToFile(self, soup, folderPath):
+    def WriteSoupToFile(self, soup, folderPath, fileType = '.html'):
         """
-        * Write soup object to local html file.
+        * Write soup object to local file.
         """
         if not os.path.exists(folderPath):
             raise Exception('folderPath at path does not exist.')
-        path= ''.join([path, self.Name, '.html'])
+        path= ''.join([folderPath, self.Name, fileType])
         html = soup.prettify()  
         with open(path,"w") as f:
             for i in range(0, len(html)):
@@ -185,8 +184,6 @@ class Corporate10KDocument(object):
         # Pull file using BeautifulSoup library from link, extract all sections and
         # place into map:
         self.__ExtractSections(soup)
-        
-        self.WriteToFile()
 
     def __GetLinks(self):
         """
@@ -201,13 +198,26 @@ class Corporate10KDocument(object):
 
         # If the link is .htm convert it to .html
         return Corporate10KDocument.__ConvertHTMLinksToHTML(soup)
+
+    def __ExtractTables(self, soup):
+        """
+        * Extract all financials, store in tables.
+        """
+        financialsPattern = re.compile('us-gaap:\w+')
+
     
     def __ExtractSections(self, soup):
         """
         * Map all { SectionName -> { SubSectionName -> Text } }using beautiful soup object.
         """
-        tables = soup.find_all(('table'))
-        results = [table for table in tables if 'Item' in table.get_text()]
+        tags = soup.find_all(('div'))
+        results = [tag for tag in tags if len(tag.find_all('table', recursive = True)) == 1]
+        reg = Corporate10KDocument.__itemRE
+        for result in results:
+            if len(Corporate10KDocument.__itemRE.findall(str(result))) == 1:
+                print(str(result)
+
+        # Remove all tables with fewer than 2 div children:
         dateTag = soup.find_all(('acceptance-datetime'))
         # Extract filing date from document:
         if dateTag:
@@ -217,9 +227,15 @@ class Corporate10KDocument(object):
         # We note that for each 'Item' section in the 10K, consists of <table>[Item # and Title]<\table><div>...<div>
         # until a non-'div' tag is hit.
         for result in results:
-            if not result.nextSibling:
+            if not result.nextSibling and not result.parent:
                 continue
-            if not result.nextSibling.name == 'div':
+            elif not result.nextSibling and not result.parent.parent:
+                continue
+            elif not result.nextSibling and not result.parent.parent.nextSibling:
+                continue
+            elif not result.nextSibling and not result.parent.parent.nextSibling.name == 'div':
+                continue
+            elif not result.nextSibling.name == 'div':
                 continue
             # Extract section, subsection and item number strings:
             sectionName, itemNum, subSection = Corporate10KDocument.__PullSectionAttrs(str(result))
@@ -242,7 +258,11 @@ class Corporate10KDocument(object):
             
             # Pull in all text for section:
             currText = []
-            sibling = result.nextSibling
+            if result.parent.parent.nextSibling == 'div':
+                sibling = result.parent.parent.nextSibling 
+            elif result.nextSibling.name == 'div':
+                sibling = result.nextSibling
+            
             while sibling and sibling.name == 'div':
                 currText.append(sibling.get_text())
                 currText.append(' ')
@@ -254,6 +274,7 @@ class Corporate10KDocument(object):
         """
         * Extract the name of the section from the string.
         """
+        # Remove all tricky characters from string:
         headerName = Corporate10KDocument.__headerRE.findall(string)
         sectionStr = ''
         item = None
@@ -318,6 +339,20 @@ class Corporate10KDocument(object):
             links.append(txtdoc)
 
         return links
+
+    @staticmethod
+    def __CleanTag(tag):
+        """
+        * Return string with special characters replaced with space.
+        """
+        return re.sub('\xa0', str(tag), ' ')
+
+    @staticmethod
+    def __CheckIfTableOfContents(tag):
+        """
+        * Check if tag is sitting in table of contents.
+        """
+
 
     @staticmethod
     def __NormalizeTXT(txt):
