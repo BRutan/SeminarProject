@@ -199,11 +199,21 @@ class Corporate10KDocument(object):
         # If the link is .htm convert it to .html
         return Corporate10KDocument.__ConvertHTMLinksToHTML(soup)
 
-    def __ExtractTables(self, soup):
+    def __ExtractFinancials(self, soup):
         """
-        * Extract all financials, store in tables.
+        * Extract all financials, store in mapping.
         """
-        financialsPattern = re.compile('us-gaap:\w+')
+        ticker = self.Ticker.lower()
+        financialsPattern1 = re.compile(ticker + ':.+', re.UNICODE)
+        financialsPattern2 = re.compile('us-gaap:.+', re.UNICODE)
+        results = soup.find_all((financialsPattern1, financialsPattern2))
+        for result in results:
+            # Find which table line item belongs to:
+            table = result.parent
+            # Get values:
+            if 'decimals' in result.keys():
+                dec = result.get('decimals')
+                val = result.get_text()
 
     
     def __ExtractSections(self, soup):
