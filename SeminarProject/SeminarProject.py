@@ -5,7 +5,7 @@
 
 import csv
 import DataBase
-import Corporate10KDocument
+from Corporate10KDocument import Corporate10KDocument
 
 class SeminarProject(object):
     """
@@ -18,14 +18,29 @@ class SeminarProject(object):
         """
         self.DB = database
         self.Tickers = self.__PullTickers(tickerPath)
+        self.CorpTableColumns = {"CorpID" : ["int", True, ""], "Name" : ["text", False, ""], 
+                                 "Ticker" : ["varchar(5)", False, ""], "Industry" : ["text", False, ""], "Brands" : ["text", False, ""]}
+
+        self.DataColumns = { "CorpID" : ["int", True, "Corporations(CorpID)"], "SearchTerm" : ["text", False, ""], 
+                       "User" : ["text", False, ""], "Date" : ["date", False, ""], "Tweet" : ["text", False, ""] }
+        self.CorpToBrands = {}
 
     def LoadAllBrands(self):
         """
-        * Pull all brands from corporation's 10K.
+        * Pull all brands from corporation's 10K, push into database.
         """
+        # Determine if brands were already loaded for each corporation:
+        db = self.DB
+        results = db.ExecuteQuery('SELECT Ticker, Brands FROM Corporations WHERE Brands Not Null;', True)
+        if results:
+            for result in results:
+                pass
+        # Pull all brands from 10K:
         for ticker in self.Tickers.keys():
-            pass
-
+            doc = Corporate10KDocument(ticker, '12312018')
+            sectionText = self.Sections['Business']['']
+            if section:
+                pass
 
     def CreateTables(self):
         """
@@ -39,8 +54,8 @@ class SeminarProject(object):
         # Skip creating corporations table if already created:
         if not db.TableExists("Corporations"):
             tables = db.Tables
+            corpTableColumns = self.CorpTableColumns
             # Create Corporations table that maps corporation name to ticker, insert all corporations into database:
-            corpTableColumns = {"CorpID" : ["int", True, ""], "Name" : ["text", False, ""], "Ticker" : ["varchar(5)", False, ""], "Industry" : ["text", False, ""]}
             db.CreateTable("Corporations", "Research_Seminar_Project", corpTableColumns)
             corpData = {}
             for key in corpTableColumns.keys():
@@ -59,8 +74,7 @@ class SeminarProject(object):
 
             db.InsertValues("Corporations", "Research_Seminar_Project", corpData)
         # Insert all data into the Corporations table:
-        dataColumns = { "CorpID" : ["int", True, "Corporations(CorpID)"], "SearchTerm" : ["text", False, ""], 
-                       "User" : ["text", False, ""], "Date" : ["date", False, ""], "Tweet" : ["text", False, ""] }
+        dataColumns = self.DataColumns
         tableSig = "Tweets_%s"
         # Create Tweets_{Ticker} table for each corporation:
         # One table for each ticker using listed columns:
@@ -71,7 +85,7 @@ class SeminarProject(object):
 
         return db    
 
-    def SampleTweets(self, keyword):
+    def SampleAndInsertTweets(self, keyword):
 
         pass
 

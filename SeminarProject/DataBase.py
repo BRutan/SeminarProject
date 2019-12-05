@@ -343,7 +343,7 @@ class MYSQLDatabase(object):
 
     def __CleanString(string):
         """
-        * Clean string of all invalid characters.
+        * Clean string of all non-unicode characters.
         """
         pass
 

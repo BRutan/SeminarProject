@@ -106,26 +106,6 @@ def __Move10Ks(topFolder, path):
         pass
 
 
-def PullBrandsFrom10Ks(tickers, priorDate):
-    """
-    * Pull all brands from Business sections in 10ks.
-    Returns dictionary mapping ticker to full 10K text.
-    """
-    # Skip if all brands were pulled in already:
-    cachedBrands = __GetCachedBrands(tickers)
-
-    # Extract brands from 10K text file, map to ticker:
-    tickerToBrands = {}
-    for ticker in tickers.keys():
-        if ticker not in cachedBrands.keys():
-            # Extract all brands from 10K:
-            tickerToBrands[ticker] = __ExtractBrands(ticker, ticker, priorDate)
-
-    # Store all pulled brands in the cache for 20 days:
-    __SetCachedBrands(tickerToBrands)
-    
-    return tickerToBrands
-
 ######################################
 # Private Helpers:
 ######################################

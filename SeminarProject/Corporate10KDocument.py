@@ -28,7 +28,7 @@ class Corporate10KDocument(object):
     __itemRE = re.compile(__itemREStr)
     __itemTitleRE = re.compile(__titleREStr)
     __tagTextRE = re.compile('.*>.*<.*') 
-    def __init__(self, ticker, date, localPath = None):
+    def __init__(self, ticker, date, localDocPath = None, localSoupPath = None):
         """
         * Create new object. Pull from local file if localPath specified,
         (using predetermined format) or pull from 
@@ -39,7 +39,7 @@ class Corporate10KDocument(object):
         self.__itemMap = {}
         self.__sectionToItemMap = {}
         # Pull text from SEC Edgar website, load into object:
-        self.__Pull10KText(localPath)
+        self.__Pull10KText(localDocPath, localSoupPath)
         self.WriteToFile()
 
     @property
@@ -104,11 +104,41 @@ class Corporate10KDocument(object):
     ###################
     # Interface Methods:
     ###################
-    def WriteHTMLFile(self, soup, folderPath):
+    def LoadSoupFromFile(self, folderPath):
         """
-        * Write HTML file using soup object.
+        * Load BeautifulSoup object from local file at path.
         """
-        pass
+        if not os.path.exists(folderPath):
+            raise Exception('folderPath does not exist.')
+        path= ''.join([path, self.Name, '.html'])
+
+        return Soup(path, "lxml")
+
+    def LoadDocFromFile(self, folderPath):
+        """
+        * Pull in all sections from local file, load into object.
+        """
+        if not os.path.exists(folderPath):
+            raise Exception('folderPath does not exist.')
+        path = ''.join([folderPath, self.Name, '.txt'])
+
+        with open(path, 'r') as f:
+            reader = csv.reader(f)
+
+    def WriteSoupToFile(self, soup, folderPath):
+        """
+        * Write soup object to local html file.
+        """
+        if not os.path.exists(folderPath):
+            raise Exception('folderPath at path does not exist.')
+        path= ''.join([path, self.Name, '.html'])
+        html = soup.prettify()  
+        with open(path,"w") as f:
+            for i in range(0, len(html)):
+                try:
+                    f.write(html[i])
+                except Exception:
+                    pass        
 
     def WriteToFile(self, folderPath = '\\10Ks\\'):
         """
@@ -127,30 +157,33 @@ class Corporate10KDocument(object):
                 writer.writerow('SECTION ')
                 for subSection in self.Sections[topSection].keys():
                     itemNum = self.__sectionToItemMap[subSection]
-                    
 
     ###################
     # Private Helpers:
     ###################
-    def __Pull10KText(self, path = None):
+    def __Pull10KText(self, localDocPath, localSoupPath):
         """
         * Pull 10K text from local file or from SEC Edgar website.
         """
         # Pull from local file if path was specified:
-        if path != None:
+        if localDocPath != None:
             # Pull from local file:
-            self.__LoadDocFromFile(path)
+            self.LoadDocFromFile(path)
             return
-
-        # Pull from website:
-        links = self.__GetLinks()
-        # Assuming that links have been output in descending order, and that 
-        # the first link is the one we want.
-        link = links[0]
-    
+        
+        soup = None
+        if localSoupPath != None:
+            soup = self.LoadSoupFromFile(localSoupPath)
+        else:
+            # Pull from website:
+            links = self.__GetLinks()
+            # Assuming that links have been output in descending order, and that 
+            # the first link is the one we want.
+            link = links[0]
+            soup = self.__Clean(link)
+        
         # Pull file using BeautifulSoup library from link, extract all sections and
         # place into map:
-        soup = self.__Clean(link)
         self.__ExtractSections(soup)
         
         self.WriteToFile()
@@ -169,34 +202,18 @@ class Corporate10KDocument(object):
         # If the link is .htm convert it to .html
         return Corporate10KDocument.__ConvertHTMLinksToHTML(soup)
     
-    @staticmethod
-    def __Clean(link):
-        """
-        * Clean all tags from document text.
-        """
-        data = requests.get(link).text
-        soup = Soup(data, "lxml")
-    
-        for tag in soup.findAll():
-            if tag.name.lower() in Corporate10KDocument.__blacklistTags.keys():
-                # blacklisted tags are removed in their entirety
-                tag.extract()
-            if tag.name.lower() in Corporate10KDocument.__skiptags.keys():
-                tag.replaceWithChildren()            
-            for attribute in Corporate10KDocument.__attrlist.keys():
-                del tag[attribute]
-        return soup
-
     def __ExtractSections(self, soup):
         """
         * Map all { SectionName -> { SubSectionName -> Text } }using beautiful soup object.
         """
-        # textRE = re.compile('</table>.*<table>')
-        #text = soup.find_all((textRE))
-        
         tables = soup.find_all(('table'))
         results = [table for table in tables if 'Item' in table.get_text()]
-        
+        dateTag = soup.find_all(('acceptance-datetime'))
+        # Extract filing date from document:
+        if dateTag:
+            dateTag = dateTag[0]
+            self.Date =  Corporate10KDocument.__GetFilingDate(dateTag)
+
         # We note that for each 'Item' section in the 10K, consists of <table>[Item # and Title]<\table><div>...<div>
         # until a non-'div' tag is hit.
         for result in results:
@@ -232,42 +249,6 @@ class Corporate10KDocument(object):
                 sibling = sibling.nextSibling
             # Add text to the Sections map:
             self.Sections[topSection][subSection] = ''.join(currText) 
-
-    def WriteSoupToFile(self, soup, folderPath):
-        """
-        * Write soup object to local html file.
-        """
-        if not os.path.exists(folderPath):
-            raise Exception('folderPath at path does not exist.')
-        path= ''.join([path, self.Name, '.html'])
-        html = soup.prettify()  
-        with open(path,"w") as f:
-            for i in range(0, len(html)):
-                try:
-                    f.write(html[i])
-                except Exception:
-                    pass
-
-    def LoadSoupFromFile(self, folderPath):
-        """
-        * Load BeautifulSoup object from local file at path.
-        """
-        if not os.path.exists(folderPath):
-            raise Exception('folderPath does not exist.')
-        path= ''.join([path, self.Name, '.html'])
-
-        return Soup(path, "html.parser")
-
-    def LoadDocFromFile(self, folderPath):
-        """
-        * Pull in all sections from local file, load into object.
-        """
-        if not os.path.exists(folderPath):
-            raise Exception('folderPath does not exist.')
-        path = ''.join([folderPath, self.Name, '.txt'])
-
-        with open(path, 'r') as f:
-            reader = csv.reader(f)
 
     def __PullSectionAttrs(string):
         """
@@ -351,3 +332,32 @@ class Corporate10KDocument(object):
         * Return enclosing folder for passed file.
         """
         return path[0:path.rfind('\\')]
+    @staticmethod
+    def __GetFilingDate(tag):
+        """
+        * Extract the filing date from document given the <acceptance-datetime> tag:
+        """
+        filingExp = re.findall('FILED AS OF DATE:\s+\d{8}', str(tag))
+        if filingExp:
+            return re.findall('\d{8}', filingExp[0])[0]
+        else:
+            return None
+    @staticmethod
+    def __Clean(link):
+        """
+        * Clean all tags from document text.
+        """
+        data = requests.get(link).text
+        soup = Soup(data, "lxml")
+        
+        results = soup.find_all(('FILED AS OF DATE'))
+
+        # Remove all useless tags:
+        for tag in soup.findAll():
+            if tag.name.lower() in Corporate10KDocument.__blacklistTags.keys():
+                tag.extract()
+            if tag.name.lower() in Corporate10KDocument.__skiptags.keys():
+                tag.replaceWithChildren()            
+            for attribute in Corporate10KDocument.__attrlist.keys():
+                del tag[attribute]
+        return soup
