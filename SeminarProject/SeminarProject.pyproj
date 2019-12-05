@@ -30,6 +30,9 @@
     <Compile Include="Project.py" />
     <Compile Include="Pull10Ks.py" />
     <Compile Include="PullTwitterData.py" />
+    <Compile Include="SeminarProject.py">
+      <SubType>Code</SubType>
+    </Compile>
     <Compile Include="SentimentAnalyzer.py" />
   </ItemGroup>
   <Import Project="$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)\Python Tools\Microsoft.PythonTools.targets" />

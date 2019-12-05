@@ -13,20 +13,21 @@ import requests
 import re
 import os
 import unicodedata
-import Pull10Ks
 
 class Corporate10KDocument(object):
     """
     * Class pulls 10K for ticker from SEC website, cleans into usable form, 
     then divides text up into appropriate sections.
     """
-    __tm = '®'
-    __blacklistTags = ["script", "style"]
-    __attrlist = ["class", "id", "name", "style", 'cellpadding', 'cellspacing']
-    __skiptags = ['font', 'a', 'b', 'i', 'u']
-    __SubSectionRE = re.compile('\d*[A-Z]')
-    __SectionRE = re.compile('[I|i]tem\s\d*.[\w|\W]*\d*')
-    __ItemRE = re.compile('Item\s\d*')
+    __blacklistTags = {"script" : 0, "style" : 0}
+    __attrlist = {"class" : 0, "id" : 0, "name" : 0, "style": 0, 'cellpadding': 0, 'cellspacing': 0}
+    __skiptags = {'font' : 0, 'a': 0, 'b': 0, 'i': 0, 'u': 0}
+    __itemREStr = '<tr><td><div>Item \d+[A-Z]?\.?<\/div><\/td>'
+    __titleREStr = '<td><div>[\w|\s|\d]+<\/div><\/td>'
+    __headerRE = re.compile(__itemREStr + __titleREStr)
+    __itemRE = re.compile(__itemREStr)
+    __itemTitleRE = re.compile(__titleREStr)
+    __tagTextRE = re.compile('.*>.*<.*') 
     def __init__(self, ticker, date, localPath = None):
         """
         * Create new object. Pull from local file if localPath specified,
@@ -39,6 +40,7 @@ class Corporate10KDocument(object):
         self.__sectionToItemMap = {}
         # Pull text from SEC Edgar website, load into object:
         self.__Pull10KText(localPath)
+        self.WriteToFile()
 
     @property
     def Name(self):
@@ -102,23 +104,30 @@ class Corporate10KDocument(object):
     ###################
     # Interface Methods:
     ###################
-    def WriteHTMLFile(self, )
-    def WriteCleanedFile(self, items, path):
+    def WriteHTMLFile(self, soup, folderPath):
         """
-        * 
+        * Write HTML file using soup object.
         """
-        rowStrs = []
-        for item in items:
-            rowStr = str(item.get_text())
-            if rowStr != '':
-                rowStr = ''.join([ch if ord(ch) < 255 else ' ' for ch in rowStr])
-                rowStrs.append(rowStr)
+        pass
 
-        with open(path, 'w', newline='') as f:
+    def WriteToFile(self, folderPath = '\\10Ks\\'):
+        """
+        * Write cleaned text to local file, using custom
+        tags to indicate sections and section names.
+        """
+        folderPath = folderPath.strip()
+        # Ensure that folder exists:
+        if not os.path.exists(folderPath):
+            raise Exception('file folder does not exist.')
+        path = ''.join([folderPath, self.Name, '.txt'])
+        chunkSize = 116
+        with open(path, 'w') as f:
             writer = csv.writer(f)
-            for row in rowStrs:
-                writer.writerow([row])
-
+            for topSection in self.Sections.keys():
+                writer.writerow('SECTION ')
+                for subSection in self.Sections[topSection].keys():
+                    itemNum = self.__sectionToItemMap[subSection]
+                    
 
     ###################
     # Private Helpers:
@@ -144,11 +153,8 @@ class Corporate10KDocument(object):
         soup = self.__Clean(link)
         self.__ExtractSections(soup)
         
-        # Write cleaned text to local file:
-        fileName = ''.join([self.Ticker, '_10K_', self.DateStr, '_Sections.txt'])
-    
-        #self.__WriteSectionsToFile(path)
-    
+        self.WriteToFile()
+
     def __GetLinks(self):
         """
         * Pull all potential matching links from SEC website.
@@ -172,12 +178,12 @@ class Corporate10KDocument(object):
         soup = Soup(data, "lxml")
     
         for tag in soup.findAll():
-            if tag.name.lower() in Corporate10KDocument.__blacklistTags:
+            if tag.name.lower() in Corporate10KDocument.__blacklistTags.keys():
                 # blacklisted tags are removed in their entirety
                 tag.extract()
-            if tag.name.lower() in Corporate10KDocument.__skiptags:
+            if tag.name.lower() in Corporate10KDocument.__skiptags.keys():
                 tag.replaceWithChildren()            
-            for attribute in Corporate10KDocument.__attrlist:
+            for attribute in Corporate10KDocument.__attrlist.keys():
                 del tag[attribute]
         return soup
 
@@ -185,59 +191,47 @@ class Corporate10KDocument(object):
         """
         * Map all { SectionName -> { SubSectionName -> Text } }using beautiful soup object.
         """
-        tables = soup.find_all(("table", "tr", "td"))
-        for table in tables:
-            table.find_all("div")
-            for i, item in enumerate(table)
-        # loop over all tables
-        items = soup.find_all(("table", "div"))
-        itemNum = ''
-        subChar = ''
-        for i, item in enumerate(items):
-            if 'Item' in item:
-                text = item.get_text()
-                sectionStr, itemNum, subChar = Corporate10KDocument.__PullSectionAttrs(text)
-                # If hit a subsection, then determine the super section name, and add
+        # textRE = re.compile('</table>.*<table>')
+        #text = soup.find_all((textRE))
+        
+        tables = soup.find_all(('table'))
+        results = [table for table in tables if 'Item' in table.get_text()]
+        
+        # We note that for each 'Item' section in the 10K, consists of <table>[Item # and Title]<\table><div>...<div>
+        # until a non-'div' tag is hit.
+        for result in results:
+            if not result.nextSibling:
+                continue
+            if not result.nextSibling.name == 'div':
+                continue
+            # Extract section, subsection and item number strings:
+            sectionName, itemNum, subSection = Corporate10KDocument.__PullSectionAttrs(str(result))
+            # Create map in stored Sections dictionary:
+            if itemNum in self.__ItemToSection.keys():
+                # If at a subsection, then determine the super section name, and add
                 # subsection title to map.
-                if itemNum in self.__ItemToSection.Keys():
-                    topSection = self.__ItemToSection[itemNum]
-                    self.Sections[topSection][sectionStr] = ''
-                    self.__SectionToItem[sectionStr] = itemNum + subChar
-                    self.__ItemToSection[itemNum + subChar] = sectionStr
-                else:
-                    self.__ItemToSection[itemNum] = sectionStr
-                if sectionStr not in self.Sections.keys():
-                    self.Sections[sectionStr] = {}
-                    self.Sections[sectionStr][sectionStr] = ''
-            elif itemNum:
-                # Put the text into the map:
-                mapKey = itemNum + subChar
                 topSection = self.__ItemToSection[itemNum]
-                if subChar:
-                    subSec = self.__ItemToSection[itemNum + subChar]
-                    self.Sections[topSection][subSec] = text
-                else:
-                    self.Sections[topSection][topSection] = text
-                itemNum = ''
-                subChar = ''
-
-    def __WriteSectionsToFile(self, path):
-        """
-        * Write cleaned text to local file, using custom
-        tags to indicate sections and section names.
-        """
-        path = path.strip()
-        # Ensure that folder exists:
-        if not os.path.exists(__GetFolder(path)):
-            raise Exception('file folder does not exist.')
-        elif os.path.exists(path):
-            raise Exception('file already exists.')
-
-        with open(path, 'w') as f:
-            writer = csv.writer(f)
-            for topSection in self.Sections.keys():
-                itemNum = self.__ItemNumToSectionStr
-                writer.writerow('----')
+                self.Sections[topSection][sectionName] = ''
+                self.__SectionToItem[sectionName] = subSection
+                self.__ItemToSection[subSection] = sectionName
+            else:
+                # Add super section, and create section to itself:
+                topSection = sectionName
+                subSection = sectionName
+                self.__ItemToSection[itemNum] = sectionName
+                self.__SectionToItem[sectionName] = itemNum
+                self.Sections[sectionName] = {}
+                self.Sections[sectionName][sectionName] = ''
+            
+            # Pull in all text for section:
+            currText = []
+            sibling = result.nextSibling
+            while sibling and sibling.name == 'div':
+                currText.append(sibling.get_text())
+                currText.append(' ')
+                sibling = sibling.nextSibling
+            # Add text to the Sections map:
+            self.Sections[topSection][subSection] = ''.join(currText) 
 
     def WriteSoupToFile(self, soup, folderPath):
         """
@@ -264,7 +258,6 @@ class Corporate10KDocument(object):
 
         return Soup(path, "html.parser")
 
-
     def LoadDocFromFile(self, folderPath):
         """
         * Pull in all sections from local file, load into object.
@@ -276,28 +269,57 @@ class Corporate10KDocument(object):
         with open(path, 'r') as f:
             reader = csv.reader(f)
 
-    def __PullSectionAttrs(sectionStr):
+    def __PullSectionAttrs(string):
         """
         * Extract the name of the section from the string.
         """
-        sectionName = Corporate10KDocument.__SectionRE.findall(sectionStr)
-        item = ''
-        subSec = ''
-        if sectionName:
-            sectionName = sectionName[0]
-            item = Corporate10KDocument.__ItemRE.findall(sectionName)
+        headerName = Corporate10KDocument.__headerRE.findall(string)
+        sectionStr = ''
+        item = None
+        subSec = None
+        if headerName:
+            headerName = headerName[0]
+            sectionStr = Corporate10KDocument.__itemTitleRE.findall(headerName)
+            item = Corporate10KDocument.__itemRE.findall(headerName)
         if item:
-            item = item[0]
-            sectionStr = sectionName[sectionName.find(item), len(sectionName)]
-            subSec = Corporate10KDocument.__SubSectionRE.findall(item)
+            item = Corporate10KDocument.__TagText(item[0]).strip()
+            subSec = re.findall('.[A-Z]', item)
+            item = Corporate10KDocument.__NumbersOnly(item)
+        else:
+            item = None
         if subSec:
-            subSec = subSec[0]
+            subSec = Corporate10KDocument.__TagText(subSec[0]).strip()
+        else:
+            subSec = None
+        if sectionStr:
+            sectionStr = Corporate10KDocument.__TagText(sectionStr[0]).strip()
+        else:
+            sectionStr = None
         
-        return (sectionStr.strip(), item.strip(), subSec.strip())
+        return (sectionStr, item, subSec)
 
     #################
     # Static Helpers:
     #################
+    @staticmethod
+    def __TagText(string):
+        """
+        * Pull text from tag.
+        """
+        return re.sub(r'<\/?\w+>', '', string)
+    @staticmethod
+    def __NumbersOnly(string):
+        """
+        * Return string with numbers only.
+        """
+        return re.sub(r'\D', '', string)
+    @staticmethod
+    def __NoPunctuation(string):
+        """
+        * Return string without punctuation.
+        """
+        return re.sub('.|,|;|:', '', string)
+
     @staticmethod
     def __ConvertHTMLinksToHTML(soupObj):
         """
