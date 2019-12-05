@@ -210,12 +210,14 @@ class Corporate10KDocument(object):
         """
         * Map all { SectionName -> { SubSectionName -> Text } }using beautiful soup object.
         """
-        tags = soup.find_all(('div'))
-        results = [tag for tag in tags if len(tag.find_all('table', recursive = True)) == 1]
+        tags = soup.find_all(('table'))
+        results = [tag for tag in tags if 'Item' in tag.get_text()]
+        sectionTags = []
         reg = Corporate10KDocument.__itemRE
         for result in results:
-            if len(Corporate10KDocument.__itemRE.findall(str(result))) == 1:
-                print(str(result)
+            string = Corporate10KDocument.__CleanString(str(result))
+            if len(Corporate10KDocument.__itemRE.findall(string)) == 1:
+                sectionTags.append(result)
 
         # Remove all tables with fewer than 2 div children:
         dateTag = soup.find_all(('acceptance-datetime'))
@@ -226,17 +228,7 @@ class Corporate10KDocument(object):
 
         # We note that for each 'Item' section in the 10K, consists of <table>[Item # and Title]<\table><div>...<div>
         # until a non-'div' tag is hit.
-        for result in results:
-            if not result.nextSibling and not result.parent:
-                continue
-            elif not result.nextSibling and not result.parent.parent:
-                continue
-            elif not result.nextSibling and not result.parent.parent.nextSibling:
-                continue
-            elif not result.nextSibling and not result.parent.parent.nextSibling.name == 'div':
-                continue
-            elif not result.nextSibling.name == 'div':
-                continue
+        for result in sectionTags:
             # Extract section, subsection and item number strings:
             sectionName, itemNum, subSection = Corporate10KDocument.__PullSectionAttrs(str(result))
             # Create map in stored Sections dictionary:
@@ -255,26 +247,24 @@ class Corporate10KDocument(object):
                 self.__SectionToItem[sectionName] = itemNum
                 self.Sections[sectionName] = {}
                 self.Sections[sectionName][sectionName] = ''
-            
+            # Walk up through tree until node has div siblings (standard for Items sections):
+            tag = self.__WalkSectionTag(result)
+
             # Pull in all text for section:
             currText = []
-            if result.parent.parent.nextSibling == 'div':
-                sibling = result.parent.parent.nextSibling 
-            elif result.nextSibling.name == 'div':
-                sibling = result.nextSibling
-            
-            while sibling and sibling.name == 'div':
-                currText.append(sibling.get_text())
-                currText.append(' ')
-                sibling = sibling.nextSibling
+            tag = tag.nextSibling
+            while tag and tag.name == 'div':
+                currText.append(tag.get_text())
+                tag = tag.nextSibling
             # Add text to the Sections map:
-            self.Sections[topSection][subSection] = ''.join(currText) 
+            self.Sections[topSection][subSection] = ' '.join(currText) 
 
     def __PullSectionAttrs(string):
         """
         * Extract the name of the section from the string.
         """
         # Remove all tricky characters from string:
+        string = Corporate10KDocument.__CleanString(str(string))
         headerName = Corporate10KDocument.__headerRE.findall(string)
         sectionStr = ''
         item = None
@@ -303,6 +293,14 @@ class Corporate10KDocument(object):
     #################
     # Static Helpers:
     #################
+    @staticmethod
+    def __WalkSectionTag(tag):
+        """
+        * Walk the section tag up until it has div siblings, which contain text for Item.
+        """
+        while tag.nextSibling is None or tag.nextSibling.name != 'div':
+            tag = tag.parent
+        return tag
     @staticmethod
     def __TagText(string):
         """
@@ -339,6 +337,13 @@ class Corporate10KDocument(object):
             links.append(txtdoc)
 
         return links
+
+    @staticmethod
+    def __CleanString(str):
+        """
+        * Clean all non-unicode characters.
+        """
+        return ''.join([ch if ord(ch) < 128 else ' ' for ch in str])
 
     @staticmethod
     def __CleanTag(tag):

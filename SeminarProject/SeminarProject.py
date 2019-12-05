@@ -14,8 +14,8 @@ class SeminarProject(object):
     """
     * Key objects required for performing seminar project.
     """
-    __tradeMark = '\w+®'
-    __tmRE = re.compile(__tradeMark)
+    __brandPattern = '\("\w*"\)|\w+®'
+    __brandRE = re.compile(__brandPattern)
     __utfSupport = 'CHARACTER SET utf8 COLLATE utf8_unicode_ci'
     def __init__(self, tickerPath, database):
         """
@@ -27,8 +27,8 @@ class SeminarProject(object):
                                  "Ticker" : ["varchar(5)", False, ""], "Industry" : ["text", False, ""], "Brands" : ["text", False, ""]}
 
         self.DataColumns = { "CorpID" : ["int", True, "Corporations(CorpID)"], "SearchTerm" : ["text", False, ""], 
-                       "User" : ["text", False, SeminarProject.__utfSupport], "Date" : ["date", False, ""], 
-                       "Tweet" : ["text", False, SeminarProject.__utfSupport] }
+                       "User" : ["text " + SeminarProject.__utfSupport, False, ''], "Date" : ["date", False, ""], 
+                       "Tweet" : ["text " + SeminarProject.__utfSupport, False, ''] }
         self.CorpToBrands = {}
 
     #######################
@@ -48,24 +48,38 @@ class SeminarProject(object):
         """
         # Determine if brands were already loaded for each corporation:
         db = self.DB
-        results = db.ExecuteQuery('SELECT DISTINCT Ticker FROM Corporations WHERE Brands IS NOT NULL;', getResults = True)
-        if len(results['ticker']) == len(self.Tickers.keys()):
-            for result in results.values():
-                pass
-            return
+        results = db.ExecuteQuery('SELECT Ticker, Brands FROM Corporations WHERE Brands IS NOT NULL;', getResults = True)
+        if results and len(results.keys()) == len(self.Tickers.keys()):
+            for row in results.keys():
+                ticker = results[row]['ticker']
+                brands = results[row]['brands']
+                self.CorpToBrands[ticker] = brands
 
         # Determine the year end date for this year:
         yearEnd = datetime.today() + offsets.YearEnd()
 
-        # Load 10K object, pull all brands from 10K:
+        # Pull all brands from 10K:
         for ticker in self.Tickers.keys():
             doc = Corporate10KDocument(ticker, yearEnd)
-            sectionText = self.Sections['Business']['']
+            if not doc.Sections:
+                doc.Sections = doc.Sections
+            busSections = doc.Sections['Business']
+            brands = {}
             # Search section text for all trademarks:
-            tradeMarks = SeminarProject.__tmRE.findall(self.__tradeMark)
-            for brand in tradeMarks:
-                pass
-
+            for section in busSections:
+                text = busSections[section]
+                text = ''.join([ch if ord(ch) != 8220 and ord(ch) != 8221 else '"' for ch in text])
+                potentialBrands = SeminarProject.__brandRE.findall(text)
+                for brand in potentialBrands:
+                    brands[brand] = True
+            self.CorpToBrands[ticker] = brands
+            insertValues = {'ticker' : [], 'brands' : []}
+            tableName = self.TickerToTable[ticker]
+            # Push brands into the mysql database:
+            for brand in brands:
+                insertValues['ticker'].append(ticker)
+                insertValues['brand'].append(brand)
+            db.InsertValues(tableName, insertValues)
 
     def CreateTables(self):
         """
@@ -76,6 +90,7 @@ class SeminarProject(object):
         # Connect to database, pull in current company table names:
         db = self.DB
         tickerToCorps = self.Tickers
+        self.TickerToTable = {}
         # Skip creating corporations table if already created:
         if not db.TableExists("Corporations"):
             tables = db.Tables
@@ -105,6 +120,7 @@ class SeminarProject(object):
         # One table for each ticker using listed columns:
         for ticker in tickerToCorps.keys():
             tableName = tableSig % ticker.strip()
+            self.TickerToTable[ticker] = tableName
             if not db.TableExists(tableName):
                 db.CreateTable(tableName, dataColumns)
 

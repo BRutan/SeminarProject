@@ -209,6 +209,7 @@ class MYSQLDatabase(object):
             potColumnTokens = tokens[tokens.index("select") + 1: fromIndex]
             tableName = ''
             output = {}
+            columns = []
             for token in potTableTokens:
                 if tableName:
                     break
@@ -219,15 +220,20 @@ class MYSQLDatabase(object):
 
             for token in potColumnTokens:
                 if token in self.__tables[tableName].keys():
-                    output[token] = []
+                    columns.append(token)
             
-            # Output data as dictionary mapping column name to data:
+            # Output data as dictionary mapping row number to dictionary mapping column to value:
             rawResults = cursor.fetchall() 
+            rowNum = 0
             for result in rawResults:
-                columnCounter = 0
-                for column in output.keys():
-                    output[column].append(result[columnCounter])
-                    columnCounter += 1
+                output[rowNum] = {}
+                colNum = 0
+                for column in columns:
+                    if column not in output[rowNum].keys():
+                        output[rowNum][column] = result[colNum]
+                    colNum += 1
+                    output[rowNum][column].append(result[columnCounter])
+                rowNum += 1
 
             return output
 
@@ -243,6 +249,8 @@ class MYSQLDatabase(object):
         if not schema:
             schema = self.ActiveSchema
         errMsgs = self.__CheckParams(tableName, schema, columns)
+
+        tableName = tableName.lower()
         if len(errMsgs) > 0:
             raise Exception('\n'.join(errMsgs))
         # Raise exception if schema and table do not exist:
@@ -421,3 +429,9 @@ class MYSQLDatabase(object):
             colEntry[0] += ' NOT NULL'
 
         return colEntry
+
+    def __CleanString(self, str):
+        """
+        * Clean all non-unicode characters and '#'.
+        """
+        return ''.join([ch if ord(ch) < 128 and ord(ch) != 35 else ' ' for ch in str])
