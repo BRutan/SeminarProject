@@ -53,7 +53,7 @@ def PrintTweetsToCSV(tweets, path):
                         currRow.append(getattr(tweet, column).strftime("%m/%d/%Y"))
                     else:
                         strVersion = str(getattr(tweet, column))
-                        currRow.append(TwitterPuller.UnicodeStr(strVersion))
+                        currRow.append(TwitterPuller.AsciiStr(strVersion))
                 writer.writerow(currRow)
 
 

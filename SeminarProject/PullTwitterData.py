@@ -13,7 +13,7 @@ class TwitterPuller(object):
     ###############################
     # Constructors:
     ###############################
-    def __init__(self, keywords):
+    def __init__(self, keywords = None):
         """
         * Create new twitter puller object using default tokens listed in file.
         Parameters:
@@ -21,9 +21,8 @@ class TwitterPuller(object):
         """
         self.__keywords = []
         # Remove all non-unicode characters and blanks in each keyword:
-        for word in keywords:
-            uniWord = TwitterPuller.UnicodeStr(word)
-            if uniWord:
+        if keywords:
+            for word in keywords:
                 self.__keywords.append(uniWord)
     
     ###############################
@@ -31,7 +30,7 @@ class TwitterPuller(object):
     ###############################
     # tweetCriteria = got.manager.TweetCriteria().setQuerySearch('test').setMaxTweets(5)
     # ['author_id', 'date', 'favorites', 'formatted_date', 'geo', 'hashtags', 'id', 'mentions', 'permalink', 'retweets', 'text', 'urls', 'username']
-    def PullTweets(self, startDate, numTweets):
+    def PullTweets(self, startDate, numTweets, keyword = None):
         """
         * Pull all tweets using stored keywords object.
         Documentation: https://python-twitter.readthedocs.io/en/latest/twitter.html#twitter.models.Status
@@ -40,18 +39,22 @@ class TwitterPuller(object):
         tweetCriteria = got.manager.TweetCriteria()
         tweetCriteria = tweetCriteria.setSince(startDate)
         tweetCriteria = tweetCriteria.setMaxTweets(numTweets)
-        for keyword in self.__keywords:
-            if keyword:
-                try:
-                    tweetCriteria = tweetCriteria.setQuerySearch(keyword)
-                    results[keyword] = got.manager.TweetManager.getTweets(tweetCriteria)
-                except Exception as ex:
-                    continue
-
-        # Return dictionary containing keywords mapped to list of status objects:
+        if not keyword:
+            for keyword in self.__keywords:
+                if keyword:
+                    try:
+                        tweetCriteria = tweetCriteria.setQuerySearch(keyword)
+                        results[keyword] = got.manager.TweetManager.getTweets(tweetCriteria)
+                    except Exception as ex:
+                        continue
+        else:
+            tweetCriteria = tweetCriteria.setQuerySearch(keyword)
+            results = got.manager.TweetManager.getTweets(tweetCriteria)
+                    
+        # Return dictionary containing keywords mapped to list of status objects or list:
         return results
 
-    def UnicodeStr(string):
+    def AsciiStr(string):
         """
         * Convert unicode string.
         """
