@@ -59,15 +59,6 @@ import unicodedata
 def normtxt(txt):
     return unicodedata.normalize("NFKD",txt)
 
-def WriteSoupToFile(soup, path):
-    html = soup.prettify()  
-    with open(path,"w") as out:
-        for i in range(0, len(html)):
-            try:
-                out.write(html[i])
-            except Exception:
-                pass
-
 def WriteFile(items, path):
     rowStrs = []
     for item in items:

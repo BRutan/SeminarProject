@@ -41,11 +41,17 @@ class Corporate10KDocument(object):
         self.__Pull10KText(localPath)
 
     @property
+    def Name(self):
+        """
+        * Return name of object (for identifying in local files).
+        """
+        return ''.join([self.Ticker, '_10K_',self.DateStr])
+    @property
     def FilePath(self):
         """
         * Return predetermined file path name for this object, to read from and output to.
         """
-        return self.Ticker
+        return ''.join([self.Name + '.txt'])
     @property
     def Sections(self):
         """
@@ -96,7 +102,8 @@ class Corporate10KDocument(object):
     ###################
     # Interface Methods:
     ###################
-    def WriteFile(items, path):
+    def WriteHTMLFile(self, )
+    def WriteCleanedFile(self, items, path):
         """
         * 
         """
@@ -232,15 +239,42 @@ class Corporate10KDocument(object):
                 itemNum = self.__ItemNumToSectionStr
                 writer.writerow('----')
 
-    def __LoadDocFromFile(self, path):
+    def WriteSoupToFile(self, soup, folderPath):
+        """
+        * Write soup object to local html file.
+        """
+        if not os.path.exists(folderPath):
+            raise Exception('folderPath at path does not exist.')
+        path= ''.join([path, self.Name, '.html'])
+        html = soup.prettify()  
+        with open(path,"w") as f:
+            for i in range(0, len(html)):
+                try:
+                    f.write(html[i])
+                except Exception:
+                    pass
+
+    def LoadSoupFromFile(self, folderPath):
+        """
+        * Load BeautifulSoup object from local file at path.
+        """
+        if not os.path.exists(folderPath):
+            raise Exception('folderPath does not exist.')
+        path= ''.join([path, self.Name, '.html'])
+
+        return Soup(path, "html.parser")
+
+
+    def LoadDocFromFile(self, folderPath):
         """
         * Pull in all sections from local file, load into object.
         """
-        if not os.path.exists(path):
-            raise Exception('file at path does not exist.')
+        if not os.path.exists(folderPath):
+            raise Exception('folderPath does not exist.')
+        path = ''.join([folderPath, self.Name, '.txt'])
 
         with open(path, 'r') as f:
-            reader = csv.writer(f)
+            reader = csv.reader(f)
 
     def __PullSectionAttrs(sectionStr):
         """
