@@ -1,58 +1,16 @@
-##############################################
-# Pull10Ks.py
-##############################################
-# Description:
-# * 
-
-from bs4 import BeautifulSoup as Soup
 import requests
-import os.path
-import unicodedata
+from bs4 import BeautifulSoup as Soup
+import csv
 
-def PullFilesCleanSoup(cik, company, dateStr, n = 1, max_n = 1):
-    """
-    * Pull 10Ks to 
-    """
-    mylinks = get_links(cik, dateStr, str(max_n))
-    year = int(dateStr[0:4])
-    dates = range(year, 1000, -1)
-    result_txt = []
-    i = 0
 
-    for link in mylinks:
-        filename = company + "_10k_" + str(dates[i]) + ".txt"
-        if os.path.isfile(filename):
-            print("skipping "+filename)
-            i+=1
-            if i >= n:
-                break
-            continue
-
-        soup = clean_soup(link)
-        section = extract_section(soup)
-        
-        if section is None:
-            continue
-
-        with open(filename, "w") as f:
-            f.write(section)
-            
-        i += 1
-
-        if i >= n:
-            break
-
-        return soup
-
-##############################################
-# Helper Functions
-##############################################
 def get_links(cik, priorto, count):
     link = "http://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK="+ \
         str(cik)+"&type=10-K&dateb="+str(priorto)+"&owner=exclude&output=xml&count="+str(count)
     
     # parse the website and extract links
     data = requests.get(link).text
+    # print("see tentative links for all documents:")
+    # print(link)
     
     soup = Soup(data, "lxml")
     # store the link in the list
@@ -93,10 +51,35 @@ def clean_soup(link):
                     
     return soup
 
+
+import unicodedata
+
 # normalize the text
 # remove some escape characters
 def normtxt(txt):
     return unicodedata.normalize("NFKD",txt)
+
+def WriteSoupToFile(soup, path):
+    html = soup.prettify()  
+    with open(path,"w") as out:
+        for i in range(0, len(html)):
+            try:
+                out.write(html[i])
+            except Exception:
+                pass
+
+def WriteFile(items, path):
+    rowStrs = []
+    for item in items:
+        rowStr = str(item.get_text())
+        if rowStr != '':
+            rowStr = ''.join([ch if ord(ch) < 255 else ' ' for ch in rowStr])
+            rowStrs.append(rowStr)
+
+    with open(path, 'w', newline='') as f:
+        writer = csv.writer(f)
+        for row in rowStrs:
+            writer.writerow([row])
 
 # get section from 10K
 # looks for the term "item 1a" and collects text until "item 1b" is found
@@ -130,7 +113,7 @@ def extract_section(soup, section='1a', section_end='1b'):
     lines = ""
     des = myitem.find_next(search_next)
     
-    search_txt = [ 'item '+section_end ]
+    search_txt = [ 'item '+ section_end ]
 
     while not des is None:
         des = des.find_next(search_next)
@@ -152,4 +135,45 @@ def extract_section(soup, section='1a', section_end='1b'):
             continue
     
     return lines[1:]
+    
+    
+import os.path
+
+
+def get_files(cik, company, n=5, max_n=20):
+    mylinks = get_links(cik, '20170601', str(max_n))
+    dates = range(2017, 1000, -1)
+    print("downloading 10-Ks item 1A for CIK =",cik, "...")
+    result_txt = []
+    i=0
+    for link in mylinks:
+        filename = company+"_10k_"+str(dates[i])+".txt"
+
+        if os.path.isfile(filename):
+            print("skipping "+filename)
+            i+=1
+            
+            if i >= n:
+                break
+
+            continue
+
+        # This downloads the file:
+        soup = clean_soup(link)
+        section = extract_section(soup)
+        
+        # Skip if doesn't have sections:
+        if section is None:
+            continue
+        
+        print("writing "+filename+"...")
+        
+        with open(filename,"w") as f:
+            f.write(section)
+            
+        i+=1
+
+        if i >= n:
+            break
+    
     

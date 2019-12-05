@@ -4,8 +4,7 @@
     <SchemaVersion>2.0</SchemaVersion>
     <ProjectGuid>3b087734-5889-4d64-8158-eef5659fedd8</ProjectGuid>
     <ProjectHome>.</ProjectHome>
-    <StartupFile>
-    </StartupFile>
+    <StartupFile>Main.py</StartupFile>
     <SearchPath>
     </SearchPath>
     <WorkingDirectory>.</WorkingDirectory>
@@ -22,6 +21,9 @@
     <EnableUnmanagedDebugging>false</EnableUnmanagedDebugging>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="Corporate10KDocument.py">
+      <SubType>Code</SubType>
+    </Compile>
     <Compile Include="DataBase.py" />
     <Compile Include="HelperFunctions.py" />
     <Compile Include="Main.py" />

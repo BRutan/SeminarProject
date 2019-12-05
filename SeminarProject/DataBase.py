@@ -345,8 +345,8 @@ class MYSQLDatabase(object):
         """
         * Clean string of all invalid characters.
         """
-        return ''.join([ch if ord(ch) < 127 and ch != '#' for ch in string])
-        
+        pass
+
     def __CheckDBObjectsExist(self, tableName, schema, tableExists = True):
         """
         * Ensure that schema and table exists.

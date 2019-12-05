@@ -17,7 +17,6 @@ from sec_edgar_downloader import Downloader
 from nltk.stem import WordNetLemmatizer, SnowballStemmer
 from nltk.corpus import stopwords
 from nltk.tokenize import sent_tokenize, RegexpTokenizer
-from Pull10Ks import PullFilesCleanSoup
 from PullTwitterData import TwitterPuller
 import requests
 import sys

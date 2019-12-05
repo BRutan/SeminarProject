@@ -9,6 +9,8 @@ import DataBase
 import os
 from HelperFunctions import CreateTables, PullBrandsFrom10Ks, Pull10Ks, PullTickers, PrintTweetsToCSV
 from PullTwitterData import TwitterPuller
+from Pull10Ks import get_files
+from Corporate10KDocument import Corporate10KDocument
 
 #### TODO:
 ## 2. Figure out how to extract all brands from consumer product corps' 10ks, using regex 
@@ -27,6 +29,12 @@ def mapStatus(statuses):
         objs.append(tup)
 
     return objs
+
+def test():
+    get_files('AAPL', 'Apple')
+
+def test2():
+    doc = Corporate10KDocument('aapl', '20181231')
 
 def main():
     outputPath = "C:\\Users\\rutan\\OneDrive\\Desktop\\Fordham MSQF Courses\\Research Seminar\\Project\\Project\\"
@@ -82,4 +90,5 @@ def main():
             PrintTweetsToCSV(tweets, "Tweets_AAP.csv")
     
 if __name__ == '__main__':
-    main()
+    test2()
+    #main()
