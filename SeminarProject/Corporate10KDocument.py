@@ -9,16 +9,24 @@
 from bs4 import BeautifulSoup as Soup
 import csv
 from datetime import date, datetime
-import requests
+import pandas as p 
 import re
+import requests
 import os
 import unicodedata
 
 class Corporate10KDocument(object):
     """
-    * Class pulls 10K for ticker from SEC website, cleans into usable form, 
-    then divides text up into appropriate sections.
+    * Class pulls 10K for ticker from SEC website, divides text up into appropriate sections,
+    and stores financials data in easily accessible tables.
     """
+    ###############
+    #
+    ###############
+    #__importantDocs = {'subsidaries' : re.compile('subsidiaries', 'i')}
+    ###############
+    # For reading raw xml data:
+    ###############
     __blacklistTags = {"script" : 0, "style" : 0}
     __attrlist = {"class" : 0, "id" : 0, "name" : 0, "style": 0, 'cellpadding': 0, 'cellspacing': 0}
     __skiptags = {'font' : 0, 'a': 0, 'b': 0, 'i': 0, 'u': 0}
@@ -27,7 +35,13 @@ class Corporate10KDocument(object):
     __headerRE = re.compile(__itemREStr + __titleREStr)
     __itemRE = re.compile(__itemREStr)
     __itemTitleRE = re.compile(__titleREStr)
-    __tagTextRE = re.compile('.*>.*<.*') 
+    __tagTextRE = re.compile('.*>.*<.*')
+    # <ticker:.*>
+    ###############
+    # For outputting using custom tags:
+    ###############
+    __tags = {'financial' : '<FinancialsTable:%s>', 'section' : '<TextSection:%s>'}
+    __FinancialsTag = re.compile("<FinancialsTable:.*>")
     def __init__(self, ticker, yearEndDate, localDocPath = None, localSoupPath = None):
         """
         * Create new object. Pull from local file if localPath specified,
@@ -40,13 +54,15 @@ class Corporate10KDocument(object):
         self.__sectionToItemMap = {}
         # Pull text from SEC Edgar website, load into object:
         self.__Pull10KText(localDocPath, localSoupPath)
-
+    ########## 
+    # Properties:
+    ##########
     @property
-    def Name(self):
-        """
-        * Return name of object (for identifying in local files).
-        """
-        return ''.join([self.Ticker, '_10K_',self.DateStr])
+    def Date(self):
+        return self.__date
+    @property
+    def DateStr(self):
+        return self.__date.strftime('%Y%m%d')
     @property
     def FilePath(self):
         """
@@ -54,11 +70,71 @@ class Corporate10KDocument(object):
         """
         return ''.join([self.Name + '.txt'])
     @property
+    def Financials(self):
+        """
+        * Map TableName -> numpy.array()
+        """
+        return self.__Financials
+    @property
+    def Name(self):
+        """
+        * Return name of object (for identifying in local files).
+        """
+        return ''.join([self.Ticker, '_10K_',self.DateStr])
+    @property
     def Sections(self):
         """
         * Maps SectionName -> { SubSectionName -> SubSectionName
         """
         return self.__section
+    @property
+    def Subsidiaries(self):
+        """
+        * Return all company subsidiaries.
+        """
+        return self.__subidiaries
+    @property
+    def Ticker(self):
+        return self.__ticker
+    @Date.setter
+    def Date(self, dt):
+        if isinstance(dt, datetime):
+            self.__date = dt.date()
+        elif isinstance(dt, str):
+            self.__date = datetime.strptime(dt, '%Y%m%d').date()
+        elif not isinstance(dt, date):
+            raise Exception('Date must be a date/datetime object.')
+        else:
+            self.__date = dt
+    @Financials.setter
+    def Financials(self, fin):
+        if not isinstance(fin, dict):
+            raise Exception('Financials must be a dictionary.')
+        self.__Financials = fin
+    @Sections.setter
+    def Sections(self, _dict):
+        if not isinstance(_dict, dict):
+            raise Exception('Sections must be a dictionary')
+        self.__section = _dict
+    @Subsidiaries.setter
+    def Subsidiaries(self, subs):
+        if not isinstance(subs, p.DataFrame):
+            raise Exception('Subsidiaries must be a Pandas.Dataframe.')
+        self.__subidiaries = subs
+    @Ticker.setter
+    def Ticker(self, ticker):
+        if not isinstance(ticker, str):
+            raise Exception('Ticker must be a string.')
+        self.__ticker = ticker.lower()
+    ########## 
+    # Private properties:
+    ##########
+    @property
+    def __FinancialsTag(self):
+        """
+        * XML tag containing financials data (<ticker:.*>).
+        """
+        return '<%s:.*>' % self.Ticker
     @property
     def __ItemToSection(self):
         """
@@ -70,36 +146,7 @@ class Corporate10KDocument(object):
         """
         * Map SectionName -> Item #.
         """
-        return self.__sectionToItemMap
-    @property
-    def Ticker(self):
-        return self.__ticker
-    @property
-    def Date(self):
-        return self.__date
-    @property
-    def DateStr(self):
-        return self.__date.strftime('%Y%m%d')
-    @Sections.setter
-    def Sections(self, _dict):
-        if not isinstance(_dict, dict):
-            raise Exception('Sections must be a dictionary')
-        self.__section = _dict
-    @Ticker.setter
-    def Ticker(self, ticker):
-        if not isinstance(ticker, str):
-            raise Exception('ticker must be a string.')
-        self.__ticker = ticker.lower()
-    @Date.setter
-    def Date(self, dt):
-        if isinstance(dt, datetime):
-            self.__date = dt.date()
-        elif isinstance(dt, str):
-            self.__date = datetime.strptime(dt, '%Y%m%d').date()
-        elif not isinstance(dt, date):
-            raise Exception('dt must be a date/datetime object.')
-        else:
-            self.__date = dt
+        return self.__sectionToItemMap    
     ###################
     # Interface Methods:
     ###################
@@ -109,7 +156,7 @@ class Corporate10KDocument(object):
         """
         if not os.path.exists(folderPath):
             raise Exception('folderPath does not exist.')
-        path= ''.join([path, self.Name, '.html'])
+        path = ''.join([path, self.Name, '.html'])
 
         return Soup(path, "lxml")
 
@@ -142,7 +189,7 @@ class Corporate10KDocument(object):
     def WriteToFile(self, folderPath = '\\10Ks\\'):
         """
         * Write cleaned text to local file, using custom
-        tags to indicate sections and section names.
+        tags to indicate sections and section names, that can be pulled in more easily.
         """
         folderPath = folderPath.strip()
         # Ensure that folder exists:
@@ -175,14 +222,15 @@ class Corporate10KDocument(object):
             soup = self.LoadSoupFromFile(localSoupPath)
         else:
             # Pull from website:
-            links = self.__GetLinks()
+            links = self.__GetLinks()[0]
             # Assuming that links have been output in descending order, and that 
             # the first link is the one we want.
-            link = links[0]
-            soup = self.__Clean(link)
-        
+            soup = Soup(requests.get(links[0]).text, "lxml")
+            #soup = self.__Clean(links[0])
+            
         # Pull file using BeautifulSoup library from link, extract all sections and
         # place into map:
+        self.__ExtractFinancials(soup)
         self.__ExtractSections(soup)
 
     def __GetLinks(self):
@@ -201,29 +249,125 @@ class Corporate10KDocument(object):
 
     def __ExtractFinancials(self, soup):
         """
-        * Extract all financials, store in mapping.
+        * Extract all financials, store in mapping { TableName -> DataFrame() }
         """
+        self.Financials = {}
         ticker = self.Ticker.lower()
         financialsPattern1 = re.compile(ticker + ':.+', re.UNICODE)
         financialsPattern2 = re.compile('us-gaap:.+', re.UNICODE)
-        results = soup.find_all((financialsPattern1, financialsPattern2))
+        finPattern = re.compile(self.__FinancialsTag)
+        #results = soup.find_all(finPattern)
+        #results = soup.find_all(('xbrli', 'xbrl'))
+        #results = soup.find_all((financialsPattern1, financialsPattern2))
+        results = soup.find_all(('document'))
         for result in results:
-            # Find which table line item belongs to:
+            if re.compile('subsidiaries', 'i').match(result.text):
+                # Example:
+                self.__PullSubsidiaries(result)
+
+            # Get parent table:
+            parentTable = result.parent
+            
+            # Get the table date:
+            
+            #foundTables = parentTable.findChildren('xbrli:instant')
+            # Pull in subsidiaries:
+
+            tagName = result.name
+            # ContextRef contains the period information. 
+            period = result['contextref']
+            lineItem = re.sub('<amzn:', '', result.name)
+            
+            # Find which table line item belongs to:    `
             table = result.parent
             # Get values:
             if 'decimals' in result.keys():
                 dec = result.get('decimals')
                 val = result.get_text()
 
+    def __ExtractData(self, soup):
+        """
+        * Extract financials, footnotes and text.
+        """
+        # Extract filing date from document:
+        dateTag = soup.find('acceptance-datetime')
+        if dateTag:
+            self.Date = Corporate10KDocument.__GetFilingDate(dateTag)
+
+        docs = soup.find_all('document')
+        for doc in docs:
+            typeInfo = doc.find('type')
+            if typeInfo.getText() == '10-K':
+                # Pull in all items, load into table:
+                pass
+            else:
+                # Pull in financials data:
+
+                pass
+
+    def __Load10KSections(self, doc):
+        """
+        * Load all items from 10K section (business description, risk factors, etc) into 
+        tables.
+        """
+        tables = doc.find_all('table')
+        results = [table for table in tables if 'Item' in table.get_text()]
+        sectionTags = []
+        for result in results:
+            string = Corporate10KDocument.__CleanString(str(result))
+            if len(Corporate10KDocument.__itemRE.findall(string)) == 1:
+                sectionTags.append(result)
+
+        for tag in sectionTags:
+            # Extract section, subsection and item number strings:
+            sectionName, itemNum, subSection = Corporate10KDocument.__PullSectionAttrs(str(result))
+            # Create map in stored Sections dictionary:
+            if itemNum in self.__ItemToSection.keys():
+                # If at a subsection, then determine the super section name, and add
+                # subsection title to map.
+                topSection = self.__ItemToSection[itemNum]
+                self.Sections[topSection][sectionName] = ''
+                self.__SectionToItem[sectionName] = subSection
+                self.__ItemToSection[subSection] = sectionName
+            else:
+                # Add super section, and create section to itself:
+                topSection = sectionName
+                subSection = sectionName
+                self.__ItemToSection[itemNum] = sectionName
+                self.__SectionToItem[sectionName] = itemNum
+                self.Sections[sectionName] = {}
+                self.Sections[sectionName][sectionName] = ''
+            # Walk up through tree until node has div siblings (standard for Items sections):
+            tag = self.__WalkSectionTag(result)
+
+            # Pull in all text for section:
+            currText = []
+            tag = tag.nextSibling
+            while tag and tag.name == 'div':
+                currText.append(tag.get_text())
+                tag = tag.nextSibling
+            # Add text to the Sections map:
+            self.Sections[topSection][subSection] = ' '.join(currText)
+
+    def __LoadFinancials(self, doc):
+        """
+        * 
+        """
+        financialsPattern1 = re.compile(ticker + ':.+', re.UNICODE)
+        financialsPattern2 = re.compile('us-gaap:.+', re.UNICODE)
+        tables = doc.find_all('table')
+        for table in tables:
+
+            pass
+
     
-    def __ExtractSections(self, soup):
+    def __ExtractSections_2(self, soup):
         """
         * Map all { SectionName -> { SubSectionName -> Text } }using beautiful soup object.
         """
         tags = soup.find_all(('table'))
         results = [tag for tag in tags if 'Item' in tag.get_text()]
         sectionTags = []
-        reg = Corporate10KDocument.__itemRE
         for result in results:
             string = Corporate10KDocument.__CleanString(str(result))
             if len(Corporate10KDocument.__itemRE.findall(string)) == 1:
@@ -234,7 +378,7 @@ class Corporate10KDocument(object):
         # Extract filing date from document:
         if dateTag:
             dateTag = dateTag[0]
-            self.Date =  Corporate10KDocument.__GetFilingDate(dateTag)
+            self.Date = Corporate10KDocument.__GetFilingDate(dateTag)
 
         # We note that for each 'Item' section in the 10K, consists of <table>[Item # and Title]<\table><div>...<div>
         # until a non-'div' tag is hit.
@@ -299,6 +443,26 @@ class Corporate10KDocument(object):
             sectionStr = None
         
         return (sectionStr, item, subSec)
+
+    def __PullSubsidiaries(self, result):
+        """
+        * Pull all subsidiaries and information regarding them.
+        """
+        subs = p.DataFrame()
+        divs = doc.find_all('div')
+        headers = []
+        row = 1
+        tableVals = result.text.split('\xa0')
+        for val in tableVals:
+            if 'Exhibit' not in val:
+                if row > 1:
+
+                else:
+                    '\nEX-21.1\n3\namzn-20181231xex211.htm\nEXHIBIT 21.1\n\n\n\n\nExhibit\n'
+                'Exhibit 21.1 AMAZON.COM, INC. LIST OF SIGNIFICANT SUBSIDIARIES\xa0'
+                'Legal Name\xa0Jurisdiction\xa0Percent\xa0Owned'
+                'Amazon Services LLC\xa0Nevada\xa0100%Amazon Digital Services LLC\xa0Delaware\xa0100%
+                'Amazon.com Services, Inc.\xa0Delaware\xa0100%Amazon.com Int’l Sales, Inc.\xa0Delaware\xa0100%Amazon Technologies, Inc.\xa0Nevada\xa0100%\xa0\n\n'
 
     #################
     # Static Helpers:
@@ -367,7 +531,7 @@ class Corporate10KDocument(object):
         """
         * Check if tag is sitting in table of contents.
         """
-
+        pass
 
     @staticmethod
     def __NormalizeTXT(txt):
@@ -400,8 +564,6 @@ class Corporate10KDocument(object):
         data = requests.get(link).text
         soup = Soup(data, "lxml")
         
-        results = soup.find_all(('FILED AS OF DATE'))
-
         # Remove all useless tags:
         for tag in soup.findAll():
             if tag.name.lower() in Corporate10KDocument.__blacklistTags.keys():

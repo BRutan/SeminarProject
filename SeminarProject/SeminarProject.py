@@ -9,7 +9,7 @@ from Corporate10KDocument import Corporate10KDocument
 from datetime import datetime, timedelta
 import memcache
 from pandas.tseries import offsets
-import np.random.choice as choose
+from numpy.random import choice as choose
 import re
 from PullTwitterData import TwitterPuller
 
