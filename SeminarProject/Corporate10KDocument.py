@@ -13,13 +13,14 @@ import pandas as p
 import numpy as n
 import re
 import requests
+import string
 import os
-import unicodedata
+import unicodedata as uni
 
 class Corporate10KDocument(object):
     """
     * Class pulls 10K for ticker from SEC website, divides text up into appropriate sections,
-    and stores financials data in easily accessible tables.
+    and stores text and financials data in easily accessible tables.
     """
     ###############
     #
@@ -28,7 +29,7 @@ class Corporate10KDocument(object):
     ###############
     # For reading raw xml data:
     ###############
-    __blacklistTags = {"script" : 0, "style" : 0}
+    __blacklistTags = { "script" : 0, "style" : 0 }
     __attrlist = {"class" : 0, "id" : 0, "name" : 0, "style": 0, 'cellpadding': 0, 'cellspacing': 0}
     __skiptags = {'font' : 0, 'a': 0, 'b': 0, 'i': 0, 'u': 0}
     __itemREStr = '<tr><td><div>Item \d+[A-Z]?\.?<\/div><\/td>'
@@ -54,7 +55,7 @@ class Corporate10KDocument(object):
         self.__itemMap = {}
         self.__sectionToItemMap = {}
         # Pull text from SEC Edgar website, load into object:
-        self.__Pull10KText(localDocPath, localSoupPath)
+        self.ExtractData(localDocPath, localSoupPath)
 
     ########## 
     # Properties:
@@ -84,23 +85,18 @@ class Corporate10KDocument(object):
         """
         return ''.join([self.Ticker, '_10K_',self.DateStr])
     @property
-    def Exhibits(self):
+    def TenK(self):
         """
-        * Maps SectionName -> { SubSectionName -> SubSectionName
+        * Maps Item name -> Text line
         """
-        return self.__section
-    @property
-    def Subsidiaries(self):
-        """
-        * Return all company subsidiaries.
-        """
-        return self.__subidiaries
+        return self.__tenK
     @property
     def Ticker(self):
         """
         * Return company ticker.
         """
         return self.__ticker
+
     @Date.setter
     def Date(self, dt):
         if isinstance(dt, datetime):
@@ -111,26 +107,12 @@ class Corporate10KDocument(object):
             raise Exception('Date must be a date/datetime object.')
         else:
             self.__date = dt
-    @Financials.setter
-    def Financials(self, fin):
-        if not isinstance(fin, dict):
-            raise Exception('Financials must be a dictionary.')
-        self.__Financials = fin
-    @Exhibits.setter
-    def Exhibits(self, _dict):
-        if not isinstance(_dict, dict):
-            raise Exception('Exhibits must be a dictionary')
-        self.__section = _dict
-    @Subsidiaries.setter
-    def Subsidiaries(self, subs):
-        if not isinstance(subs, p.DataFrame):
-            raise Exception('Subsidiaries must be a Pandas.Dataframe.')
-        self.__subidiaries = subs
     @Ticker.setter
     def Ticker(self, ticker):
         if not isinstance(ticker, str):
             raise Exception('Ticker must be a string.')
         self.__ticker = ticker.lower()
+
     ########## 
     # Private properties:
     ##########
@@ -139,20 +121,7 @@ class Corporate10KDocument(object):
         """
         * XML tag containing financials data (<ticker:.*>).
         """
-        return '<%s:.*>' % self.Ticker
-    @property
-    def __ItemToSection(self):
-        """
-        * Maps Item # + Subchar -> Section.
-        """
-        return self.__itemMap
-    @property
-    def __SectionToItem(self):
-        """
-        * Map SectionName -> Item #.
-        """
-        return self.__sectionToItemMap  
-    
+        return '<%s:.*>' % self.Ticker  
     ###################
     # Interface Methods:
     ###################
@@ -165,7 +134,6 @@ class Corporate10KDocument(object):
         path = ''.join([path, self.Name, '.html'])
 
         return Soup(path, "lxml")
-
     def LoadDocFromFile(self, folderPath):
         """
         * Pull in all sections from local file, load into object.
@@ -176,7 +144,6 @@ class Corporate10KDocument(object):
 
         with open(path, 'r') as f:
             reader = csv.reader(f)
-
 
     def PrintUniqueTagsWithCounts(self, soup, fileName):
         """
@@ -256,7 +223,7 @@ class Corporate10KDocument(object):
     ###################
     # Private Helpers:
     ###################
-    def __Pull10KText(self, localDocPath, localSoupPath):
+    def ExtractData(self, localDocPath, localSoupPath):
         """
         * Pull 10K text from local file or from SEC Edgar website.
         """
@@ -278,7 +245,6 @@ class Corporate10KDocument(object):
         
         # Pull information from html data:
         self.__ExtractData(soup)
-        #self.__ExtractSections_2(soup)
         
     def __ExtractData(self, soup):
         """
@@ -295,7 +261,6 @@ class Corporate10KDocument(object):
         dateTag = soup.find('acceptance-datetime')
         if dateTag:
             self.Date = Corporate10KDocument.__GetFilingDate(dateTag)
-
         docs = soup.find_all('document')
         for doc in docs:
             docType = doc.find('type')
@@ -303,9 +268,6 @@ class Corporate10KDocument(object):
                 if '10-K' in docType.text:
                     # Pull in all items, load into table:
                     self.__Load10KSections(doc)
-                elif re.compile('subsidiaries', 'i').match(typeInfo.text):
-                    # Example:
-                    self.__PullSubsidiaries(doc)
                 elif doc.find(finTags):
                     # Pull in financials data:
                     self.__LoadFinancials(doc)
@@ -329,49 +291,65 @@ class Corporate10KDocument(object):
         * Load all items from 10K section (business description, risk factors, etc) into 
         tables.
         """
-        divMatch = re.compile('line-height:120%;text-align:center;', re.UNICODE)
-        header = re.compile('.*font-weight:bold.*', re.IGNORECASE| re.UNICODE)
-        titlePattern = re.compile('.*vertical-align:top;padding-left.*', re.IGNORECASE| re.UNICODE)
-        # Get all Item #s: Item[ |]
-        itemMatch = re.compile('Item[ |\xa0]\d+[A-Z]?\.?', re.UNICODE)
-        itemVals =[tag for tag in doc.find_all('font', {'style' : header }) if itemMatch.match(tag.text)]
-        #itemVals = [tag.text for tag in doc.find_all('font', {'style' : header }) if 'Item' in tag.text]
-        fonts = [tag for tag in doc.find_all('font', {'style' : header }) if re.match('Item[ |\xa0]', tag.text, re.UNICODE)]
-        #divs = doc.find_all('div', {'style' : divMatch})
-        #divs = [div for div in divs if div.text in itemVals]
-        itemASCIIText = [tag.text.replace('\xa0', ' ') for tag in fonts]
-        #for font in fonts:
-        for item in itemVals:
-            sectionNum = item.text
-            sectionName = item.parent.parent.nextSibling.text
-            sectionName, itemNum, subSection = Corporate10KDocument.__PullSectionAttrs(str(item))
-            # Create map in stored Sections dictionary:
-            if itemNum in self.__ItemToSection.keys():
-                # If at a subsection, then determine the super section name, and add
-                # subsection title to map.
-                topSection = self.__ItemToSection[itemNum]
-                self.Sections[topSection][sectionName] = ''
-                self.__SectionToItem[sectionName] = subSection
-                self.__ItemToSection[subSection] = sectionName
+        textFont = re.compile('^font-family:inherit;font-size:\d*pt;$')
+        headerFont = re.compile('.*font-weight:bold;$')
+        fonts = doc.find_all('font', {'style' : (headerFont, textFont) })
+        itemMatch = re.compile('(Item \d+?\.?){1}')
+        subSectionMatch = re.compile('(Item \d+[A-Z]?\.?){1}')
+        #tablesWithItems = [table for table in tables if itemMatch.match(uni.normalize('NFKD', table.text))]
+        lineNum = 1
+        currFont = 0
+        currTxt = []
+        hitItem = False
+        superSections = {}
+        for font in fonts:
+            text = uni.normalize('NFKD', font.text)
+            if itemMatch.match(text):
+                # Next font contains the name of the section:
+                sectionName = uni.normalize('NFKD', fonts[currFont + 1]).strip()
+                self.__tenK[sectionName][sectionName] = {}
+                hitItem = True
+            elif subSectionMatch.match(text):
+                # Find the super-section name:
+                itemNum = re.sub('')
+                self.__tenK[sectionName][subSection] = {}
+            elif hitItem:
+                hitItem = False
             else:
-                # Add super section, and create section to itself:
-                topSection = sectionName
-                subSection = sectionName
-                self.__ItemToSection[itemNum] = sectionName
-                self.__SectionToItem[sectionName] = itemNum
-                self.Sections[sectionName] = {}
-                self.Sections[sectionName][sectionName] = ''
-            
-            # Pull all text belonging to the section:
-            currTag = item
-            while currTag.parent.name != 'text':
-                currTag = currTag.parent
-            texts = []
+                # Divide text into 188 character chunks for each line:
+                if currTxt and len(text) > 188:
+                    currTxt.append(text[0:188 - len(text)])
+                    self.__tenK[sectionName] = ''.join(currTxt)
+                    lineNum += 1
+                    currTxt = [text[188 - len(text): len(text)]]
+                elif len(text) > 188:
+                    currTxt.append(text[0:188 - len(text)])
+                else:
+                    tenKTxt[lineNum] = ''.join(currTxt)
 
+            currFont += 1
 
-            # Add text to the Sections map:
-            self.Sections[topSection][subSection] = ' '.join(currText)
-    
+    def __MapSection(self, tag):
+        sectionName, itemNum, subSection = Corporate10KDocument.__PullSectionAttrs(str(tag))
+        # Create map in stored Sections dictionary:
+        if itemNum in self.__ItemToSection.keys():
+            # If at a subsection, then determine the super section name, and add
+            # subsection title to map.
+            topSection = self.__ItemToSection[itemNum]
+            self.Sections[topSection][sectionName] = ''
+            self.__SectionToItem[sectionName] = subSection
+            self.__ItemToSection[subSection] = sectionName
+        else:
+            # Add super section, and create section to itself:
+            topSection = sectionName
+            subSection = sectionName
+            self.__ItemToSection[itemNum] = sectionName
+            self.__SectionToItem[sectionName] = itemNum
+            self.Sections[sectionName] = {}
+            self.Sections[sectionName][sectionName] = {}
+
+        return (sectionName, itemNum, subSection)
+
     def __ExtractSections_2(self, soup):
         """
         * Map all { SectionName -> { SubSectionName -> Text }} using beautiful soup object.
@@ -424,37 +402,6 @@ class Corporate10KDocument(object):
             # Add text to the Sections map:
             self.Sections[topSection][subSection] = ' '.join(currText) 
 
-    def __PullSectionAttrs(string):
-        """
-        * Extract the name of the section from the string.
-        """
-        # Remove all tricky characters from string:
-        string = Corporate10KDocument.__CleanString(str(string))
-        headerName = Corporate10KDocument.__headerRE.findall(string)
-        sectionStr = ''
-        item = None
-        subSec = None
-        if headerName:
-            headerName = headerName[0]
-            sectionStr = Corporate10KDocument.__itemTitleRE.findall(headerName)
-            item = Corporate10KDocument.__itemRE.findall(headerName)
-        if item:
-            item = Corporate10KDocument.__TagText(item[0]).strip()
-            subSec = re.findall('.[A-Z]', item)
-            item = Corporate10KDocument.__NumbersOnly(item)
-        else:
-            item = None
-        if subSec:
-            subSec = Corporate10KDocument.__TagText(subSec[0]).strip()
-        else:
-            subSec = None
-        if sectionStr:
-            sectionStr = Corporate10KDocument.__TagText(sectionStr[0]).strip()
-        else:
-            sectionStr = None
-        
-        return (sectionStr, item, subSec)
-
     def __PullSectionAttrs_2(string):
         """
         * Extract the name of the section from the string.
@@ -485,26 +432,7 @@ class Corporate10KDocument(object):
             sectionStr = None
         
         return (sectionStr, item, subSec)
-
-    def __PullSubsidiaries(self, doc):
-        """
-        * Pull all subsidiaries and listed information.
-        """
-        table = doc.find('table')
-        header = re.compile('.*font-weight:bold.*', 'i')
-        notHeader = re.compile('.*(?!font-weight:bold).*', 'i')
-        headers = [tag.text for tag in table.find_all('font', { 'style' : header })]
-        dataCells = table.find_all('font', {'style' : notHeader })
-        data = {}
-        row = 1
-        for cell in dataCells:
-            data[row] = []
-            for col in range(0, len(headers)):
-                data[row].append(cell.text)
-            row += 1
-        self.Subsidiaries = p.DataFrame(data, columns = headers)
-                
-
+        
     #################
     # Static Helpers:
     #################
@@ -534,7 +462,6 @@ class Corporate10KDocument(object):
         * Return string without punctuation.
         """
         return re.sub('.|,|;|:', '', string)
-
     @staticmethod
     def __ConvertHTMLinksToHTML(soupObj):
         """
@@ -552,35 +479,24 @@ class Corporate10KDocument(object):
             links.append(txtdoc)
 
         return links
-
     @staticmethod
     def __CleanString(str):
         """
-        * Clean all non-unicode characters.
+        * Clean all non-ascii characters.
         """
         return ''.join([ch if ord(ch) < 128 else ' ' for ch in str])
-
     @staticmethod
     def __CleanTag(tag):
         """
         * Return string with special characters replaced with space.
         """
         return re.sub('\xa0', str(tag), ' ')
-
-    @staticmethod
-    def __CheckIfTableOfContents(tag):
-        """
-        * Check if tag is sitting in table of contents.
-        """
-        pass
-
     @staticmethod
     def __NormalizeTXT(txt):
         """
         * Normalize string to use unicode.
         """
         return unicodedata.normalize("NFKD",txt)
-
     @staticmethod
     def __GetFolder(path):
         """
@@ -597,6 +513,14 @@ class Corporate10KDocument(object):
             return re.findall('\d{8}', filingExp[0])[0]
         else:
             return None
+    @staticmethod
+    def __GetSectionNum(sectionText):
+        """
+        * Get the section number.
+        """
+        all = string.maketrans('','')
+        nodigs = all.translate(all, string.digits)
+        return sectionText.translate(all, nodigs)
     @staticmethod
     def __Clean(link):
         """
@@ -616,19 +540,44 @@ class Corporate10KDocument(object):
         return soup
 
 
-
-    class Section(object):
+    class SubDocument(object):
         """
-        * Section of 10K.
+        * Document within 10K.
         """
-        def __init__(self):
-            pass
+        def __init__(self, doc):
+            self.__Load(doc)
+        ###################################
+        # Properties:
+        ###################################
         @property
         def FootNotes(self):
             return self.__footnotes
+        @property 
+        def Name(self):
+            return self.__name
         @property
         def Tables(self):
             return self.__tables
-
-        
-        
+        @property
+        def Text(self):
+            return self.__text
+        @FootNotes.setter
+        def FootNotes(self, footnotes):
+            return self.__footnotes
+        @Name.setter
+        def Name(self, name):
+            return self.__name
+        @Tables.setter
+        def Tables(self, ):
+            return self.__tables
+        @Text.setter
+        def Text(self):
+            return self.__text
+        ###################################
+        # Properties:
+        ###################################
+        def __Load(self, doc):
+            """
+            * Load all data from document in easily accessible format.
+            """
+            pass
