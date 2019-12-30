@@ -21,7 +21,10 @@
     <EnableUnmanagedDebugging>false</EnableUnmanagedDebugging>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="Corporate10KDocument.py">
+    <Compile Include="BrandQuery.py">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="CorporateFiling.py">
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="DataBase.py" />

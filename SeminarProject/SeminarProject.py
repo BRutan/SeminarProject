@@ -5,7 +5,7 @@
 
 import csv
 import DataBase
-from Corporate10KDocument import Corporate10KDocument
+from CorporateFiling import CorporateFiling, DocumentType
 from datetime import datetime, timedelta
 import memcache
 from pandas.tseries import offsets
@@ -119,7 +119,7 @@ class SeminarProject(object):
 
         # Pull all brands from 10K:
         for ticker in self.Tickers.keys():
-            doc = Corporate10KDocument(ticker, yearEnd)
+            doc = CorporateFiling(ticker, yearEnd)
             if not doc.Sections:
                 doc.Sections = doc.Sections
             busSections = doc.Sections['Business']
