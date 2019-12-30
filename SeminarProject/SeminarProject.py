@@ -117,7 +117,7 @@ class SeminarProject(object):
         # Determine the year end date for this year:
         yearEnd = datetime.today() + offsets.YearEnd()
 
-        # Pull all brands from 10K:
+        # Pull all brands from WIPO database website:
         for ticker in self.Tickers.keys():
             doc = CorporateFiling(ticker, yearEnd)
             if not doc.Sections:

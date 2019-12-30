@@ -6,8 +6,6 @@
 # cleans into usable form, then divides text up into
 # appropriate sections.
 
-# https://www.youtube.com/watch?v=2Oe9ZqXVGME
-
 from bs4 import BeautifulSoup as Soup
 import csv
 from datetime import date, datetime
@@ -130,6 +128,12 @@ class CorporateFiling(object):
         * Return name of object (for identifying in local files).
         """
         return ''.join([self.Ticker, '_', self.DocumentType, '_', self.DateStr])
+    @property
+    def Subsidiaries(self):
+        """
+        * All significant subsidiaries, as well as % ownership.
+        """
+        return self.__subsidiaries
     @property
     def TextSections(self):
         """
@@ -254,6 +258,7 @@ class CorporateFiling(object):
         """
         self.__financials = {}
         self.__textSections = {}
+        self.__subsidiaries = {}
         # Pull from local file if path was specified:
         if customDocPath != None:
             # Pull from local file:
@@ -275,6 +280,8 @@ class CorporateFiling(object):
         fin_1 = re.compile(self.Ticker.lower() + ':.+', re.UNICODE)
         fin_2 = re.compile('us-gaap:.+', re.UNICODE)
         finTags = (fin_1, fin_2)
+        subTag = re.compile('LIST OF SIGNIFICANT SUBSIDIARIES')
+        headerFont = re.compile('.*font-weight:bold;$')
         # Get the document date:
         dateTag = soup.find('acceptance-datetime')
         if dateTag:
@@ -286,9 +293,13 @@ class CorporateFiling(object):
         docs = soup.find_all('document')
         for doc in docs:
             financials = doc.find_all(finTags)
+            headerFonts = doc.find_all('font', { 'style' : headerFont })
+            subsidiaryDoc = [font for font in headerFonts if subTag.search(font.text)]
             if financials:
                 # Pull in financials data:
                 self.__LoadFinancials(financials)
+            elif subsidiaryDoc:
+                self.__LoadSubsidiaries(doc)
             else:
                 # Pull in all items, load into table:
                 self.__LoadTextSections(doc)
@@ -329,6 +340,88 @@ class CorporateFiling(object):
         """
         pass
 
+    def __LoadTables(self, doc):
+        """
+        * Store all tables located in passed document as structured tables.
+        """
+        # Get all of the column headers in the table:
+        headerMatch = re.compile('.*solid \#000000.*')
+        tables = doc.find('table')
+        columns = {}
+        columnTypes = {}
+        colNum = 0
+        exclude = list(set(string.punctuation))
+        exclude.append(' ')
+        exclude = ''.join(exclude)
+        nonHeaders = []
+        numRows = 0
+        for table in tables:
+            rows = table.find_all('tr')
+            for row in rows:
+                cells = row.find_all('td')
+                if columns:
+                    # Pull in row values:
+                    colNum = 0
+                    for cell in cells:
+                        text = unidecode(cell.text).strip(exclude)
+                        if text:
+                            columns[colNames[colNum]].append(text)
+                            colNum += 1
+                    numRows += 1
+                elif not columns and row.find('td', { 'style' : headerMatch }):
+                    # Pull in all column headers:
+                    for cell in cells:
+                        text = unidecode(cell.text).strip(exclude)
+                        if text:
+                            columns[text] = []
+                    colNames = list(columns.keys())
+
+        # Load all table values:
+        dt = { 'names' : colNames, 'formats' : [n.unicode_] * len(colNames) }
+        self.__subsidiaries = n.zeros(numRows, dtype = dt)
+        for col in colNames:
+            self.__subsidiaries[col] = columns[col]
+
+    def __LoadSubsidiaries(self, doc):
+        """
+        * Pull in all significant subsidiaries.
+        """
+        # Get all of the column headers in the table:
+        headerMatch = re.compile('.*solid \#000000.*')
+        table = doc.find('table')
+        rows = table.find_all('tr')
+        columns = {}
+        columnTypes = {}
+        colNum = 0
+        exclude = list(set(string.punctuation))
+        exclude.append(' ')
+        exclude = ''.join(exclude)
+        nonHeaders = []
+        numRows = 0
+        for row in rows:
+            cells = row.find_all('td')
+            if columns:
+                # Pull in row values:
+                colNum = 0
+                for cell in cells:
+                    text = unidecode(cell.text).strip(exclude)
+                    if text:
+                        columns[colNames[colNum]].append(text)
+                        colNum += 1
+                numRows += 1
+            elif not columns and row.find('td', { 'style' : headerMatch }):
+                # Pull in all column headers:
+                for cell in cells:
+                    text = unidecode(cell.text).strip(exclude)
+                    if text:
+                        columns[text] = []
+                colNames = list(columns.keys())
+
+        # Load all table values:
+        dt = { 'names' : colNames, 'formats' : [n.unicode_] * len(colNames) }
+        self.__subsidiaries = n.zeros(numRows, dtype = dt)
+        for col in colNames:
+            self.__subsidiaries[col] = columns[col]
 
     def __LoadSections10K(self, doc):
         """

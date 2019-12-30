@@ -31,8 +31,8 @@ class BrandQuery(object):
             brands = SortedSet()
             rows = soup.find_all('tr', {'role' : 'row'})
             for row in rows:
-                # Brand is in first column:
-                col = row.find('td', { 'aria-describedby' : 'gridForsearch_pane_BRAND'})
+                holder = row.find('td', { 'aria-describedby' : 'gridForsearch_pane_HOL'})
+                brand = row.find('td', { 'aria-describedby' : 'gridForsearch_pane_BRAND'})
 
 
 
