@@ -6,6 +6,8 @@
 # cleans into usable form, then divides text up into
 # appropriate sections.
 
+# https://www.youtube.com/watch?v=2Oe9ZqXVGME
+
 from bs4 import BeautifulSoup as Soup
 import csv
 from datetime import date, datetime
@@ -15,17 +17,16 @@ import re
 import requests
 import string
 import os
+from xbrl import XBRLParser, GAAP
+import unicodecsv as uniCSV
 import unicodedata as uni
+from unidecode import unidecode
 
 class Corporate10KDocument(object):
     """
     * Class pulls 10K for ticker from SEC website, divides text up into appropriate sections,
     and stores text and financials data in easily accessible tables.
     """
-    ###############
-    #
-    ###############
-    #__importantDocs = {'subsidaries' : re.compile('subsidiaries', 'i')}
     ###############
     # For reading raw xml data:
     ###############
@@ -38,28 +39,62 @@ class Corporate10KDocument(object):
     __itemRE = re.compile(__itemREStr)
     __itemTitleRE = re.compile(__titleREStr)
     __tagTextRE = re.compile('.*>.*<.*')
-    # <ticker:.*>
     ###############
     # For outputting using custom tags:
     ###############
     __tags = {'financial' : '<FinancialsTable:%s>', 'section' : '<TextExhibit:%s>'}
     __FinancialsTag = re.compile("<FinancialsTable:.*>")
-    def __init__(self, ticker, yearEndDate, localDocPath = None, localSoupPath = None):
+
+    def __init__(self, ticker, **args):
         """
-        * Create new object. Pull from local file if localPath specified,
-        (using predetermined format) or pull from 
+        * Instantiate new document object, pull from SEC edgar website or local file 
+        depending upon provided arguments.
+        Potential Arguments:
+        * 
         """
-        self.Exhibits = {}
-        self.Ticker = ticker
-        self.Date = yearEndDate
+        errMsgs = []
+        if not isinstance(ticker, str):
+            raise Exception('ticker must be a string.')
+        self.__ticker = ticker
         self.__itemMap = {}
         self.__sectionToItemMap = {}
-        # Pull text from SEC Edgar website, load into object:
-        self.ExtractData(localDocPath, localSoupPath)
+        hasArg = False
+        
+        # Pull tags from html file if provided:
+        if 'htmlPath' in args.keys():
+            if not isinstance(args['htmlPath'], str):
+                errMsgs.append('htmlPath must be a string.')
+            elif not os.path.exists(args['htmlPath']):
+                errMsgs.append('File at htmlPath does not exist.')
+            elif not args['htmlPath'].endswith('.html'):
+                errMsgs.append('File at htmlPath must have html extension.')
+            else:
+                hasArg = True
+                self.ExtractData(htmlPath=args['htmlPath'])
+        # Pull document from SEC Edgar website if document date was provided:
+        if not hasArg and 'date' in args.keys():
+            if isinstance(args['date'], datetime):
+                errMsgs.append('date must be a datetime object.')
+            else:
+                hasArg = True
+                self.ExtractData(date=args['date'])
+        if not hasArg and 'customDocPath' in args.keys():
+            if not isinstance(args['customDocPath'], str):
+                errMsgs.append('customDocPath must be a string.')
+            elif not os.path.exists(args['customDocPath']):
+                errMsgs.append('File at customDocPath does not exist.')
+            else:
+                hasArg = True
+                self.ExtractData(customDocPath=args['customDocPath'])
+        # Handle exceptions if occurred:
+        if errMsgs:
+            raise Exception('\n'.join(errMsgs))
+        elif not hasArg:
+            raise Exception('Please provide at least one argument in (htmlPath, date, customDocPath).')
 
-    ########## 
+    ####################
     # Properties:
-    ##########
+    ####################
     @property
     def Date(self):
         return self.__date
@@ -77,7 +112,7 @@ class Corporate10KDocument(object):
         """
         * Map TableName -> numpy.array()
         """
-        return self.__Financials
+        return self.__financials
     @property
     def Name(self):
         """
@@ -96,45 +131,10 @@ class Corporate10KDocument(object):
         * Return company ticker.
         """
         return self.__ticker
-
-    @Date.setter
-    def Date(self, dt):
-        if isinstance(dt, datetime):
-            self.__date = dt.date()
-        elif isinstance(dt, str):
-            self.__date = datetime.strptime(dt, '%Y%m%d').date()
-        elif not isinstance(dt, date):
-            raise Exception('Date must be a date/datetime object.')
-        else:
-            self.__date = dt
-    @Ticker.setter
-    def Ticker(self, ticker):
-        if not isinstance(ticker, str):
-            raise Exception('Ticker must be a string.')
-        self.__ticker = ticker.lower()
-
-    ########## 
-    # Private properties:
-    ##########
-    @property
-    def __FinancialsTag(self):
-        """
-        * XML tag containing financials data (<ticker:.*>).
-        """
-        return '<%s:.*>' % self.Ticker  
     ###################
     # Interface Methods:
     ###################
-    def LoadSoupFromFile(self, folderPath):
-        """
-        * Load BeautifulSoup object from local file at path.
-        """
-        if not os.path.exists(folderPath):
-            raise Exception('folderPath does not exist.')
-        path = ''.join([path, self.Name, '.html'])
-
-        return Soup(path, "lxml")
-    def LoadDocFromFile(self, folderPath):
+    def __LoadDocFromFile(self, folderPath):
         """
         * Pull in all sections from local file, load into object.
         """
@@ -200,45 +200,100 @@ class Corporate10KDocument(object):
                 try:
                     f.write(html[i])
                 except Exception:
-                    pass        
+                    pass     
 
-    def WriteToFile(self, folderPath = '\\10Ks\\'):
+    def PrintFinancials(self, fileName, folderPath):
+        """
+        * Print financials only to file at folder path.
+        """
+        errMsgs = []
+        if not isinstance(fileName):
+            errMsgs.append('fileName must be a string.')
+        if not isinstance(folderPath, str):
+            errMsgs.append('folderPath must be a string.')
+        elif not os.path.exists(folderPath):
+            errMsgs.append('folderPath does not exist.')
+        path = [folderPath.strip()]
+        if not folderPath.endswith('\\'):
+            path.append('\\')
+        path.append(fileName)
+        path = ''.join(path)
+        with open(path, 'w') as f:
+            writer = csv.writer(f)
+            periods = self.Financials.keys()
+            writer.writerow(list(periods))
+            currRow = []
+            for period in periods:
+                pass
+
+    def WriteToFile(self, fileName, folderPath, textChunkSize = None):
         """
         * Write cleaned text to local file, using custom
         tags to indicate sections and section names, that can be pulled in more easily.
         """
-        folderPath = folderPath.strip()
-        # Ensure that folder exists:
-        if not os.path.exists(folderPath):
-            raise Exception('file folder does not exist.')
-        path = ''.join([folderPath, self.Name, '.txt'])
-        chunkSize = 116
+        errMsgs = []
+        if not isinstance(fileName, str):
+            errMsgs.append('fileName must be a string.')
+        if not isinstance(folderPath, str):
+            errMsgs.append('folderPath must be a string.')
+        elif not os.path.exists(folderPath):
+            errMsgs.append('folderPath does not exist.')
+        if not textChunkSize:
+            chunkSize = 108
+        elif isinstance(textChunkSize, float) or isinstance(textChunkSize, int):
+            chunkSize = textChunkSize
+        else:
+            errMsgs.append('textChunkSize must be numeric.')
+        if errMsgs:
+            raise Exception(''.join(errMsgs))
+        path = [folderPath.strip()]
+        if not folderPath.endswith('\\'):
+            path.append('\\')
+        path.append(fileName)
+        path = ''.join(path)
         with open(path, 'w') as f:
-            writer = csv.writer(f)
-            for topSection in self.Exhibits.keys():
-                writer.writerow('SECTION ')
-                for subSection in self.Sections[topSection].keys():
-                    itemNum = self.__sectionToItemMap[subSection]
-
+            currRow = ['<filingdoc type: "10K;" corp: "', self.Ticker, ';" date:"', self.DateStr, '">', '\n']
+            f.write(''.join(currRow))
+            # Write text items:
+            for section in self.__tenK.keys():
+                currRow = ['<textsection name: "', section, ';">', '\n']
+                f.write(''.join(currRow))
+                for subSection in self.__tenK[section]:
+                    currRow = ['<subsection name: "', subSection, ';">', '\n']
+                    f.write(''.join(currRow))
+                    sectionLen = len(self.TenK[section][subSection])
+                    index = 0
+                    while index < sectionLen:
+                        if index + chunkSize < sectionLen:
+                            f.write(self.TenK[section][subSection][index:index + chunkSize] + '\n')   
+                        else:
+                            f.write(self.TenK[section][subSection][index:sectionLen] + '\n')
+                        index += chunkSize
+                    f.write('</subsection>\n')
+                f.write('</textsection>\n')
+            # Write financials:
+            f.write('</filingdoc>\n')
+            
     ###################
     # Private Helpers:
     ###################
-    def ExtractData(self, localDocPath, localSoupPath):
+    def ExtractData(self, date = None, customDocPath = None, htmlPath = None):
         """
         * Pull 10K text from local file or from SEC Edgar website.
         """
+        self.__financials = {}
         # Pull from local file if path was specified:
-        if localDocPath != None:
+        if customDocPath != None:
             # Pull from local file:
-            self.LoadDocFromFile(path)
+            self.__LoadDocFromFile(customDocPath)
             return
         
         soup = None
-        if localSoupPath != None:
-            soup = self.LoadSoupFromFile(localSoupPath)
-        else:
+        if htmlPath != None:
+            soup = Soup(open(htmlPath, 'r'), "lxml")
+        elif date:
             # Pull from website:
-            links = self.__GetLinks()
+            links = self.__GetLinks(date)
             # Assuming that links have been output in descending order, and that 
             # the first link is the one we want.
             soup = Soup(requests.get(links[0]).text, "lxml") 
@@ -248,36 +303,35 @@ class Corporate10KDocument(object):
         
     def __ExtractData(self, soup):
         """
-        * Extract financials, footnotes and text.
+        * Extract financials and text.
         """
-        # Extract filing date from document:
-        self.Financials = {}
-        self.Sections = {}
         # Tags denote that item is accounting line item:
         fin_1 = re.compile(self.Ticker.lower() + ':.+', re.UNICODE)
-        fin_2 = re.compile('us-gaap:.+', re.UNICODE)
-        finTags = (fin_1, fin_2, 'xbrli', 'xbrl')
+        fin_2 = re.compile('us[-_]gaap:.+', re.UNICODE)
+        # self.__finTags = (fin_1, fin_2, 'xbrli')
+        finTags = (fin_1, fin_2)
         # Get the document date:
         dateTag = soup.find('acceptance-datetime')
         if dateTag:
-            self.Date = Corporate10KDocument.__GetFilingDate(dateTag)
+            self.__date = Corporate10KDocument.__GetFilingDate(dateTag)
+        # Document is divided into multiple <document> tags, containing both text and financial information:
         docs = soup.find_all('document')
         for doc in docs:
-            docType = doc.find('type')
-            if docType:
-                if '10-K' in docType.text:
-                    # Pull in all items, load into table:
-                    self.__Load10KSections(doc)
-                elif doc.find(finTags):
-                    # Pull in financials data:
-                    self.__LoadFinancials(doc)
+            financials = doc.find_all(finTags)
+            if financials:
+                # Pull in financials data:
+                self.__LoadFinancials(financials)
+            elif '10-K' in doc.find('type').text:
+                # Pull in all items, load into table:
+                self.__Load10KSections(doc)
+                self.WriteToFile('Test.txt','D:\\Git Repos\\SeminarProject\\SeminarProject\\SeminarProject\\Notes')
 
-    def __GetLinks(self):
+    def __GetLinks(self, date):
         """
         * Pull all potential matching links from SEC website.
         """
         link = "http://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK="+ \
-            str(self.Ticker)+"&type=10-K&dateb="+str(self.DateStr)+"&owner=exclude&output=xml&count=1"
+            str(self.Ticker)+"&type=10-K&dateb="+ date.strftime('%Y%m%d') +"&owner=exclude&output=xml&count=1"
     
         # Extract potential links to filing:
         data = requests.get(link).text
@@ -291,44 +345,78 @@ class Corporate10KDocument(object):
         * Load all items from 10K section (business description, risk factors, etc) into 
         tables.
         """
+        # Map { SectionName -> { SubSectionName -> Text } }:
+        self.__tenK = {}
         textFont = re.compile('^font-family:inherit;font-size:\d*pt;$')
         headerFont = re.compile('.*font-weight:bold;$')
         fonts = doc.find_all('font', {'style' : (headerFont, textFont) })
-        itemMatch = re.compile('(Item \d+?\.?){1}')
-        subSectionMatch = re.compile('(Item \d+[A-Z]?\.?){1}')
-        #tablesWithItems = [table for table in tables if itemMatch.match(uni.normalize('NFKD', table.text))]
+        itemMatch = re.compile('^(Item \d+\.){1}$')
+        subSectionMatch = re.compile('^(Item \d+[A-Z]+.){1}$')
         lineNum = 1
         currFont = 0
         currTxt = []
+        itemToSuperSection = {}
         hitItem = False
-        superSections = {}
+        skipLine = False
         for font in fonts:
-            text = uni.normalize('NFKD', font.text)
-            if itemMatch.match(text):
+            text = unidecode(font.text).strip()
+            if skipLine:
+                skipLine = False
+            elif hitItem and 'Table of Contents' not in text and not itemMatch.match(text) and not subSectionMatch.match(text):
+                text = re.sub('\n', ' ', text)
+                currTxt.append(text)
+            elif itemMatch.match(text):
+                # Store previous text if loading previous section:
+                if hitItem:
+                    self.__tenK[sectionName][subSection] = ' '.join(currTxt)
                 # Next font contains the name of the section:
-                sectionName = uni.normalize('NFKD', fonts[currFont + 1]).strip()
-                self.__tenK[sectionName][sectionName] = {}
+                sectionName = unidecode(fonts[currFont + 1].text).strip()
+                itemNum = re.search('[0-9]+', text)[0]
+                subSection = sectionName
+                self.__tenK[sectionName] = {}
+                self.__tenK[sectionName][subSection] = ''
+                itemToSuperSection[itemNum] = sectionName
+                currTxt = []
                 hitItem = True
+                skipLine = True
             elif subSectionMatch.match(text):
-                # Find the super-section name:
-                itemNum = re.sub('')
-                self.__tenK[sectionName][subSection] = {}
-            elif hitItem:
-                hitItem = False
-            else:
-                # Divide text into 188 character chunks for each line:
-                if currTxt and len(text) > 188:
-                    currTxt.append(text[0:188 - len(text)])
-                    self.__tenK[sectionName] = ''.join(currTxt)
-                    lineNum += 1
-                    currTxt = [text[188 - len(text): len(text)]]
-                elif len(text) > 188:
-                    currTxt.append(text[0:188 - len(text)])
-                else:
-                    tenKTxt[lineNum] = ''.join(currTxt)
-
+                # Store previous text if loading previous section:
+                if hitItem:
+                    self.__tenK[sectionName][subSection] = ' '.join(currTxt)
+                itemNum = re.search('[0-9]+', text)[0]
+                sectionName = itemToSuperSection[itemNum]
+                # Next font contains the name of the section:
+                subSection = unidecode(fonts[currFont + 1].text).strip()
+                self.__tenK[sectionName][subSection] = ''
+                currTxt = []
+                hitItem = True
+                skipLine = True
+            # Write last section's text if at end:
+            if currFont == len(fonts):
+                self.__tenK[sectionName][subSection] = ' '.join(currTxt)
             currFont += 1
 
+    def __LoadFinancials(self, financials):
+        """
+        * Store all financials in current document.
+        """
+        hasFinancials = re.compile('^\d+$')
+        fin_1 = re.compile(self.Ticker.lower() + ':.+', re.UNICODE)
+        fin_2 = re.compile('us-gaap:.+', re.UNICODE)
+        # finTags = [tag for tag in financials if fin_1.match(tag.name) or fin_2.match(tag.name)]
+        for tag in financials:
+            if hasFinancials.match(tag.text):
+                # Get the line item name, period, and convert to appropriate format:
+                lineItem = self.__ExtractLineItem(tag)
+                amount = uni.normalize('NFKD', tag.text)
+                period = tag['contextref']
+                if period not in self.Financials.keys():
+                    self.Financials[period] = {}
+                self.Financials[period][lineItem] = int(amount)
+
+    #####################
+    # Helper for Helpers:
+    #####################
     def __MapSection(self, tag):
         sectionName, itemNum, subSection = Corporate10KDocument.__PullSectionAttrs(str(tag))
         # Create map in stored Sections dictionary:
@@ -349,6 +437,13 @@ class Corporate10KDocument(object):
             self.Sections[sectionName][sectionName] = {}
 
         return (sectionName, itemNum, subSection)
+
+    def __ExtractLineItem(self, tag):
+        """
+        * Extract the accounting line item from the tag name:
+        """
+        tagString = str(tag)
+        return tagString[tagString.find(':') + 1:tagString.find(' ')]
 
     def __ExtractSections_2(self, soup):
         """
@@ -468,7 +563,6 @@ class Corporate10KDocument(object):
         * Convert link to HTML if htm.
         """
         links = []
-
         for link in soupObj.find_all('filinghref'):
             # convert http://*-index.htm to http://*.txt
             url = link.string
@@ -510,7 +604,7 @@ class Corporate10KDocument(object):
         """
         filingExp = re.findall('FILED AS OF DATE:\s+\d{8}', str(tag))
         if filingExp:
-            return re.findall('\d{8}', filingExp[0])[0]
+            return datetime.strptime(re.findall('\d{8}', filingExp[0])[0], '%Y%m%d')
         else:
             return None
     @staticmethod
@@ -518,9 +612,7 @@ class Corporate10KDocument(object):
         """
         * Get the section number.
         """
-        all = string.maketrans('','')
-        nodigs = all.translate(all, string.digits)
-        return sectionText.translate(all, nodigs)
+        pass
     @staticmethod
     def __Clean(link):
         """
@@ -542,7 +634,7 @@ class Corporate10KDocument(object):
 
     class SubDocument(object):
         """
-        * Document within 10K.
+        * Document within financial document.
         """
         def __init__(self, doc):
             self.__Load(doc)
@@ -563,21 +655,27 @@ class Corporate10KDocument(object):
             return self.__text
         @FootNotes.setter
         def FootNotes(self, footnotes):
-            return self.__footnotes
+            self.__footnotes = footnotes
         @Name.setter
         def Name(self, name):
-            return self.__name
+            self.__name = name
         @Tables.setter
-        def Tables(self, ):
-            return self.__tables
+        def Tables(self, table):
+            self.__tables = table
         @Text.setter
-        def Text(self):
-            return self.__text
+        def Text(self, doc):
+            self.__text = text
         ###################################
-        # Properties:
+        # Private Helpers:
         ###################################
-        def __Load(self, doc):
+        def __LoadText(self, doc):
             """
             * Load all data from document in easily accessible format.
             """
             pass
+        @property
+        def __LoadFinancials(self, doc):
+            """
+            * 
+            """
+            items = doc.find_all('')
