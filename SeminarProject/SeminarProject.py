@@ -3,9 +3,10 @@
 #################################################
 # 
 
+from BrandQuery import BrandQuery
+from CorporateFiling import CorporateFiling, DocumentType
 import csv
 import DataBase
-from CorporateFiling import CorporateFiling, DocumentType
 from datetime import datetime, timedelta
 import memcache
 from pandas.tseries import offsets
@@ -23,8 +24,6 @@ class SeminarProject(object):
     """
     * Key objects required for performing seminar project.
     """
-    __brandPattern = '\("\w*"\)|\w+®'
-    __brandRE = re.compile(__brandPattern)
     __utfSupport = 'CHARACTER SET utf8 COLLATE utf8_unicode_ci'
     __cacheKeySig = "{Corp:%s}{Brand:%s}"
     def __init__(self, tickerPath, database):
@@ -35,8 +34,9 @@ class SeminarProject(object):
         self.Tickers = {}
         self.__PullTickers(tickerPath)
         self.CorpTableColumns = {"CorpID" : ["int", True, ""], "Name" : ["text", False, ""], 
-                                 "Ticker" : ["varchar(5)", False, ""], "Industry" : ["text", False, ""], "Brands" : ["text", False, ""]}
-
+                                 "Ticker" : ["varchar(5)", False, ""], "Industry" : ["text", False, ""]}
+        self.CorpBrandTableColumns = {"CorpID" : ["int", True, "Corporations(CorpID)"], "Brands" : ["text", False, ""]}
+        self.SubsidariesTableColumns = {"CorpID" : ["int", True, "Corporations(CorpID)"], "Subsidiaries" : ["text", False, ""]}
         self.DataColumns = { "CorpID" : ["int", True, "Corporations(CorpID)"], "SearchTerm" : ["text", False, ""], 
                        "User" : ["text " + SeminarProject.__utfSupport, False, ''], "Date" : ["date", False, ""], 
                        "Tweet" : ["text " + SeminarProject.__utfSupport, False, ''] }
@@ -53,6 +53,7 @@ class SeminarProject(object):
         * Execute all steps in sequential order.
         """
         self.CreateTables()
+        self.GetSubsidiaries()
         self.LoadAllBrands()
         self.SampleAndInsertTweets()
 
@@ -86,8 +87,14 @@ class SeminarProject(object):
                     corpData[key] = []
                     for value in tickerToCorps.values():
                         corpData[key].append(value[1])
-
+            # Insert pulled corporation data from local XLY file into Corporations database:
             db.InsertValues("Corporations", corpData)
+        if not db.TableExists("Subsidiaries"):
+            columns = self.SubsidariesTableColumns
+            db.CreateTable("Subsidiaries", columns, schema = "Research_Seminar_Project")
+        if not db.TableExists("CorporateBrands"):
+            columns = self.CorpBrandTableColumns
+            db.CreateTable("CorporateBrands", columns, schema = "Research_Seminar_Project")
         # Insert all data into the Corporations table:
         dataColumns = self.DataColumns
         tableSig = "Tweets_%s"
@@ -99,41 +106,48 @@ class SeminarProject(object):
             if not db.TableExists(tableName):
                 db.CreateTable(tableName, dataColumns)
 
-        return db    
+    def GetSubsidiaries(self):
+        """
+        * Pull subsidiaries from each corporation's 10Ks.
+        """
+        db = self.DB
+        queryString = ['SELECT A.Ticker, B.Subsidiaries FROM Corporations As A ']
+        queryString.append('INNER JOIN Subsidiaries As B ON A.CorpID = B.CorpID WHERE B.Subsidiaries IS NOT NULL;')
+        queryString = ''.join(queryString)
+        results = db.ExecuteQuery(queryString, getResults = True)
+        self.TickerToSubs = {}
+        # Determine if pulled all brands already:
+        if results and len(set([result[row]['subsidiaries'] for row in results.keys()])) == len(self.Tickers.keys()):
+            for row in results.keys():
+                self.TickerToSubs[key] = results[key]
+        else:
+            # Pull 10ks:
+            yearEnd = datetime.today() + offsets.YearEnd()
+            for ticker in self.Tickers:
+                doc = CorporateFiling(ticker, yearEnd)
+                self.TickerToSubs[ticker] = list(doc.Subsidiaries['Legal Name'])
+
 
     def LoadAllBrands(self):
         """
-        * Pull all brands from corporation's 10K, push into database.
+        * Pull all brands from WIPO website, push into database.
         """
         # Determine if brands were already loaded for each corporation:
         db = self.DB
-        results = db.ExecuteQuery('SELECT Ticker, Brands FROM Corporations WHERE Brands IS NOT NULL;', getResults = True)
+        results = db.ExecuteQuery('SELECT Ticker, Brands FROM Brands WHERE Brands IS NOT NULL;', getResults = True)
         if results and len(results.keys()) == len(self.Tickers.keys()):
             for row in results.keys():
                 ticker = results[row]['ticker']
-                brands = results[row]['brands']
-                self.CorpToBrands[ticker] = brands
+                brand = results[row]['brands']
+                self.CorpToBrands[ticker].append(brand)
 
-        # Determine the year end date for this year:
-        yearEnd = datetime.today() + offsets.YearEnd()
-
+        
         # Pull all brands from WIPO database website:
         for ticker in self.Tickers.keys():
-            doc = CorporateFiling(ticker, yearEnd)
-            if not doc.Sections:
-                doc.Sections = doc.Sections
-            busSections = doc.Sections['Business']
-            brands = {}
-            # Search section text for all trademarks:
-            for section in busSections:
-                text = busSections[section]
-                text = ''.join([ch if ord(ch) != 8220 and ord(ch) != 8221 else '"' for ch in text])
-                potentialBrands = SeminarProject.__brandRE.findall(text)
-                for brand in potentialBrands:
-                    brands[brand] = True
-            self.CorpToBrands[ticker] = brands
-            insertValues = {'ticker' : [], 'brands' : []}
-            tableName = self.TickerToTable[ticker]
+            subsidiaries = self.Subsdiaries[ticker]
+            for sub in subsidiaries:
+                pass
+
             # Push brands into the mysql database:
             for brand in brands:
                 insertValues['ticker'].append(ticker)

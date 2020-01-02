@@ -6,6 +6,7 @@
 # cleans into usable form, then divides text up into
 # appropriate sections.
 
+import bs4 as BSoup
 from bs4 import BeautifulSoup as Soup
 import csv
 from datetime import date, datetime
@@ -117,29 +118,18 @@ class CorporateFiling(object):
         """
         return ''.join([self.Name + '.txt'])
     @property
-    def Financials(self):
-        """
-        * Map { TableName -> numpy.array() }
-        """
-        return self.__financials
-    @property
     def Name(self):
         """
         * Return name of object (for identifying in local files).
         """
         return ''.join([self.Ticker, '_', self.DocumentType, '_', self.DateStr])
     @property
-    def Subsidiaries(self):
+    def SubDocuments(self):
         """
-        * All significant subsidiaries, as well as % ownership.
+        * Return all data contained within <document> tags
+        { DocName -> SubDocument }.
         """
-        return self.__subsidiaries
-    @property
-    def TextSections(self):
-        """
-        * Maps { Section -> { SubSection -> Text } }.
-        """
-        return self.__textSections
+        return self.__subDocs
     @property
     def Ticker(self):
         """
@@ -190,7 +180,7 @@ class CorporateFiling(object):
                     if item not in self.Financials[period].keys():
                         currRow.append('NULL')
                     else:
-                        currRow.append(str(self.Financials[period][item]))    
+                        currRow.append(str(self.Financials[period][item]))
                 writer.writerow(currRow)
 
     def WriteToFile(self, folderPath, fileName = None, textChunkSize = None):
@@ -256,9 +246,6 @@ class CorporateFiling(object):
         """
         * Pull information from local file or SEC website.
         """
-        self.__financials = {}
-        self.__textSections = {}
-        self.__subsidiaries = {}
         # Pull from local file if path was specified:
         if customDocPath != None:
             # Pull from local file:
@@ -277,9 +264,6 @@ class CorporateFiling(object):
             raise Exception('At least one argument must be provided.')
 
         # Tags denote that item is accounting line item:
-        fin_1 = re.compile(self.Ticker.lower() + ':.+', re.UNICODE)
-        fin_2 = re.compile('us-gaap:.+', re.UNICODE)
-        finTags = (fin_1, fin_2)
         subTag = re.compile('LIST OF SIGNIFICANT SUBSIDIARIES')
         headerFont = re.compile('.*font-weight:bold;$')
         # Get the document date:
@@ -289,21 +273,14 @@ class CorporateFiling(object):
         else:
             self.__date = None
 
-        # Document is divided into multiple <document> tags, containing both text and financial information:
+        # Document is divided into multiple <document> tags, containing text, financials, :
+        self.__subDocs = {}
         docs = soup.find_all('document')
         for doc in docs:
-            financials = doc.find_all(finTags)
-            headerFonts = doc.find_all('font', { 'style' : headerFont })
-            subsidiaryDoc = [font for font in headerFonts if subTag.search(font.text)]
-            if financials:
-                # Pull in financials data:
-                self.__LoadFinancials(financials)
-            elif subsidiaryDoc:
-                self.__LoadSubsidiaries(doc)
-            else:
-                # Pull in all items, load into table:
-                self.__LoadTextSections(doc)
-                
+            subDoc = SubDocument(doc, self.Ticker)
+            name = subDoc.Name
+            self.__subDocs[name] = subDoc
+
     def __GetLinks(self, date):
         """
         * Pull all potential matching links from SEC website.
@@ -339,49 +316,7 @@ class CorporateFiling(object):
         * Load all sections in 8K.
         """
         pass
-
-    def __LoadTables(self, doc):
-        """
-        * Store all tables located in passed document as structured tables.
-        """
-        # Get all of the column headers in the table:
-        headerMatch = re.compile('.*solid \#000000.*')
-        tables = doc.find('table')
-        columns = {}
-        columnTypes = {}
-        colNum = 0
-        exclude = list(set(string.punctuation))
-        exclude.append(' ')
-        exclude = ''.join(exclude)
-        nonHeaders = []
-        numRows = 0
-        for table in tables:
-            rows = table.find_all('tr')
-            for row in rows:
-                cells = row.find_all('td')
-                if columns:
-                    # Pull in row values:
-                    colNum = 0
-                    for cell in cells:
-                        text = unidecode(cell.text).strip(exclude)
-                        if text:
-                            columns[colNames[colNum]].append(text)
-                            colNum += 1
-                    numRows += 1
-                elif not columns and row.find('td', { 'style' : headerMatch }):
-                    # Pull in all column headers:
-                    for cell in cells:
-                        text = unidecode(cell.text).strip(exclude)
-                        if text:
-                            columns[text] = []
-                    colNames = list(columns.keys())
-
-        # Load all table values:
-        dt = { 'names' : colNames, 'formats' : [n.unicode_] * len(colNames) }
-        self.__subsidiaries = n.zeros(numRows, dtype = dt)
-        for col in colNames:
-            self.__subsidiaries[col] = columns[col]
-
+    
     def __LoadSubsidiaries(self, doc):
         """
         * Pull in all significant subsidiaries.
@@ -418,10 +353,12 @@ class CorporateFiling(object):
                 colNames = list(columns.keys())
 
         # Load all table values:
-        dt = { 'names' : colNames, 'formats' : [n.unicode_] * len(colNames) }
+        values = n.array([columns[col] for col in colNames])
+        types = [col.dtype for col in values]
+        dt = { 'names' : colNames, 'formats' : types }
         self.__subsidiaries = n.zeros(numRows, dtype = dt)
-        for col in colNames:
-            self.__subsidiaries[col] = columns[col]
+        for col in range(0, len(colNames)):
+            self.__subsidiaries[colNames[col]] = values[col]
 
     def __LoadSections10K(self, doc):
         """
@@ -476,22 +413,6 @@ class CorporateFiling(object):
                 self.__textSections[sectionName][subSection] = ' '.join(currTxt)
             currFont += 1
 
-    def __LoadFinancials(self, financials):
-        """
-        * Store all financials in current document.
-        """
-        periodRE = re.compile('^.*[0-9]{4}Q[0-9](YTD|QTD)?')
-        hasFinancials = re.compile('^\d+$')
-        for tag in financials:
-            text = unidecode(tag.text.strip())
-            if hasFinancials.match(text):
-                # Get the line item name, period, and convert to appropriate format:
-                lineItem = tag.name[tag.name.find(':') + 1:]
-                period = periodRE.search(tag['contextref'])[0]
-                if period not in self.Financials.keys():
-                    self.Financials[period] = {}
-                self.Financials[period][lineItem] = int(text)
-
     #################
     # Static Helpers:
     #################
@@ -522,71 +443,257 @@ class CorporateFiling(object):
         else:
             return None
 
-    @staticmethod
-    def __Clean(link):
-        """
-        * Clean all tags from document text.
-        """
-        data = requests.get(link).text
-        soup = Soup(data, "lxml")
-        
-        # Remove all useless tags:
-        for tag in soup.findAll():
-            if tag.name.lower() in CorporateFiling.__blacklistTags.keys():
-                tag.extract()
-            if tag.name.lower() in CorporateFiling.__skiptags.keys():
-                tag.replaceWithChildren()            
-            for attribute in CorporateFiling.__attrlist.keys():
-                del tag[attribute]
-        return soup
-
 class SubDocument(object):
     """
     * Document within financial document.
     """
-    def __init__(self, doc):
+    __financialsPattern = re.compile('^\d+$')
+    __footNotePattern = re.compile('', re.UNICODE)
+    __periodPattern = re.compile('^.*[0-9]{4}Q[0-9](YTD|QTD)?')
+    __titlePattern = '^font-family:inherit;font-size:\.pt;font-weight:bold$;'
+    def __init__(self, doc, ticker):
         self.__Load(doc)
+        if not SubDocument.__finDataRE:
+            SubDocument.__finDataRE = (re.compile(self.Ticker.lower() + ':.+', re.UNICODE), re.compile('us-gaap:.+', re.UNICODE))
     ###################################
     # Properties:
     ###################################
     @property
     def FootNotes(self):
+        """
+        * All table footnotes in document.
+        """
         return self.__footnotes
     @property 
     def Name(self):
+        """
+        * Name of document.
+        """
         return self.__name
     @property
     def Tables(self):
+        """
+        * Maps { Name -> NumpyArray }.
+        """
         return self.__tables
     @property
     def Text(self):
+        """
+        * All non-table text in document.
+        """
         return self.__text
-    @FootNotes.setter
-    def FootNotes(self, footnotes):
-        self.__footnotes = footnotes
-    @Name.setter
-    def Name(self, name):
-        self.__name = name
-    @Tables.setter
-    def Tables(self, table):
-        self.__tables = table
-    @Text.setter
-    def Text(self, doc):
-        self.__text = text
+    ###################################
+    # Interface Methods:
+    ###################################
+    def FindTable(self, exp):
+        """
+        * Find table with name that matches passed regular expression.
+        Inputs:
+        * exp: Expecting regular expression string or object (if exactMatch == False), or non-regexp string (if exactMatch == True),
+        to match (string).
+        * exactMatch: Put if want to find table with name that exactly matches, else False if want to use regular 
+        expression (boolean).
+        Outputs: Will return either the first table that matches the regular expression, 
+        or None if no match.
+        """
+        errMsgs = []
+        expression = None
+        if not isinstance(exactMatch, bool):
+            errMsgs.append("exactMatch must be a boolean.")
+        if not isinstance(exp, TableItem.__reType) and not isinstance(exp, str):
+            errMsgs.append("exp must be a string/regular expression.")
+        elif isinstance(exp, TableItem.__reType) and exactMatch:
+            errMsgs.append("exp must be a string if exactMatch = True.")
+        elif isinstance(exp, str) and not exactMatch:
+            errMsgs.append("exp must be a regular expression object if exactMatch = False.")
+        if errMsgs:
+            raise Exception('\n'.join(errMsgs))
+        if not exactMatch and isinstance(exp, str):
+            try:
+                expression = re.compile(exp)
+            except:
+                raise Exception('Could not convert exp to regular expression.')
+        for tableName in self.__tables.keys():
+            if exactMatch and exp == tableName:
+                return self.__tables[tableName]
+            elif not exactMatch and expression.match(tableName):
+                return self.__tables[tableName]
+
     ###################################
     # Private Helpers:
     ###################################
+    def __Load(self, doc):
+        """
+        * Load all aspects of document into the object.
+        """
+        self.__ExtractDocName(doc.find('type'))
+        self.__LoadText(doc)
+        self.__LoadTables(doc)
+        self.__LoadFinancials(doc)
     def __LoadText(self, doc):
         """
-        * Load all data from document in easily accessible format.
+        * Load all text from document in easily accessible format.
         """
         pass
-    @property
     def __LoadFinancials(self, doc):
         """
-        * 
+        * Load all xbrl-type financials in the document.
         """
-        items = doc.find_all('')
+        financials = doc.find_all(SubDocument.__finDataRE)
+        for tag in financials:
+            text = unidecode(tag.text.strip())
+            if SubDocument.__financialsPattern.match(text):
+                # Get the line item name, period, and convert to appropriate format:
+                lineItem = tag.name[tag.name.find(':') + 1:]
+                period = SubDocument.__periodPattern.search(tag['contextref'])[0]
+                if period not in self.Financials.keys():
+                    self.Financials[period] = {}
+                self.Financials[period][lineItem] = int(text)
+
+    def __LoadTables(self, doc):
+        """
+        * Structure all tables in the document.
+        """
+        self.__tables = {}
+        tables = doc.find_all('table')
+        for table in tables:
+            tableData = TableItem(table)
+            tableName = tableData.Name
+            tableCount = 2
+            while tableName in self.__tables.keys():
+                tableName = ''.join([tableData.Name, '_', tableCount])
+                tableCount += 1
+            self.__tables[tableName] = tableData
+
+    def __ExtractDocName(self, doc):
+        """
+        * Pull document name from text.
+        """
+        divs = doc.find('text').find_all('div', recursive = False)
+        titleText = []
+        for div in divs:
+            boldFont = div.find('font', { 'style' : SubDocument.__titlePattern })
+            if boldFont:
+                titleText.append(boldFont.text.strip())
+        self.__name = ' '.join(titleText)
+            
+class TableItem(object):
+    """
+    * Loads and stores data contained in html table for easy access.
+    """
+    __reType = type(re.compile(''))
+    __headerMatch = re.compile('.*solid \#000000.*')
+    __excludeChars = ''.join(list(set(string.punctuation)).append(' '))
+    #####################
+    # Constructors:
+    #####################
+    def __init__(self, doc):
+        self.__LoadData(doc)
+    #####################
+    # Properties:
+    #####################
+    @property
+    def ColumnNames(self):
+        """
+        * Return names of columns in table.
+        """
+        return self.__data.dtype.names
+    @property
+    def Data(self):
+        """
+        * Return access to numpy table.
+        """
+        return self.__data
+    @property
+    def Name(self):
+        """
+        * Title of table.
+        """
+        return self.__name
+    #####################
+    # Interface Methods:
+    #####################
+    def FindColumn(self, exp, exactMatch = False):
+        """
+        * Find column with name that matches passed regular expression.
+        Inputs:
+        * exp: Expecting regular expression string or object (if exactMatch == False), or non-regexp string (if exactMatch == True),
+        to match (string).
+        * exactMatch: Put if want to find exact column match, else False if want to use regular 
+        expression (boolean).
+        Outputs: Will return either the first column that matches the regular expression, 
+        or None if no match.
+        """
+        errMsgs = []
+        expression = None
+        if not isinstance(exactMatch, bool):
+            errMsgs.append("exactMatch must be a boolean.")
+        if not isinstance(exp, TableItem.__reType) and not isinstance(exp, str):
+            errMsgs.append("exp must be a string/regular expression.")
+        elif isinstance(exp, TableItem.__reType) and exactMatch:
+            errMsgs.append("exp must be a string if exactMatch = True.")
+        elif isinstance(exp, str) and not exactMatch:
+            errMsgs.append("exp must be a regular expression object if exactMatch = False.")
+        if errMsgs:
+            raise Exception('\n'.join(errMsgs))
+        rows, cols = self.__data.shape
+        if not exactMatch and isinstance(exp, str):
+            try:
+                expression = re.compile(exp)
+            except:
+                raise Exception('Could not convert exp to regular expression.')
+        elif not exactMatch:
+            expression = exp
+
+        for col in range(0, cols):
+            colName = self.__data.dtype.names[col]
+            if exactMatch and exp == colName:
+                return self.__data[:,col]
+            elif not exactMatch and expression.match(colName):
+                return self.__data[:,col]
+        return None
+
+    #####################
+    # Private Helpers:
+    #####################
+    def __LoadData(self, table):
+        """
+        * Set the table data using passed BeautifulSoup <document> tag from SEC Edgar html 
+        document.
+        Inputs:
+        * table: Expecting BeautifulSoup <table> tag.
+        """
+        columns = {}
+        columnTypes = {}
+        colNum = 0
+        nonHeaders = []
+        numRows = 0
+        rows = table.find_all('tr')
+        for row in rows:
+            cells = row.find_all('td')
+            if columns:
+                # Pull in row values after getting column headers:
+                colNum = 0
+                for cell in cells:
+                    text = unidecode(cell.text).strip(TableItem.__excludeChars)
+                    if text:
+                        columns[colNames[colNum]].append(text)
+                        colNum += 1
+                numRows += 1
+            elif not columns and row.find('td', { 'style' : TableItem.__headerMatch }):
+                # Pull in all column headers:
+                for cell in cells:
+                    text = unidecode(cell.text).strip(TableItem.__excludeChars)
+                    if text:
+                        columns[text] = []
+                colNames = list(columns.keys())
+        # Load all table values:
+        values = n.array([columns[col] for col in colNames])
+        types = [col.dtype for col in values]
+        dt = { 'names' : colNames, 'formats' : types }
+        self.__data = n.zeros(numRows, dtype = dt)
+        for col in range(0, len(colNames)):
+            self.__data[colNames[col]] = values[col]
 
 class SoupTesting(object):
     @staticmethod
