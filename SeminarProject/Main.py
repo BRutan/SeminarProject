@@ -2,7 +2,7 @@
 # Main.py
 #################################
 # Description:
-# * 
+# * Perform all key steps in the 
 
 import csv
 import DataBase
@@ -10,12 +10,21 @@ import os
 import re
 from BrandQuery import BrandQuery
 from PullTwitterData import TwitterPuller
-from CorporateFiling import CorporateFiling, DocumentType
+from CorporateFiling import CorporateFiling, DocumentType, PullingSteps
 from SeminarProject import SeminarProject
     
 if __name__ == '__main__':
-    doc = CorporateFiling('amzn', DocumentType.TENK, date = '20190201')
-    
+    tenK = re.compile('10-?K', re.IGNORECASE)
+    subs = re.compile('.?subsidiaries.?', re.IGNORECASE)
+    steps = PullingSteps(False, True, False)
+    doc = CorporateFiling('amzn', DocumentType.TENK, steps, date = '20190201')
+    # Find the subsidiaries table:
+    subDoc = doc.FindSubDocument(tenK, False)
+    if subDoc:
+        subsidiaries = subDoc.FindTable(subs, False)
+        if subsidiaries:
+            subsidiaries = subsidiaries
+
     #tickerPath = "C:\\Users\\rutan\\OneDrive\\Desktop\\Fordham MSQF Courses\\Fall 2019\\Research Seminar\\Project\\Project\\XLY_All_Holdings.csv"
     #db = DataBase.MYSQLDatabase("root", "Correlation$", "127.0.0.1", "Research_Seminar_Project")
     #seminar = SeminarProject(tickerPath, db)

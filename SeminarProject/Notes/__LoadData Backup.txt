@@ -1,0 +1,88 @@
+"""
+        * Set the table data using passed BeautifulSoup <table> tag from SEC Edgar html 
+        document.
+        Inputs:
+        * table: Expecting BeautifulSoup <table> tag.
+        """
+        if self.__name == "CONSOLIDATED STATEMENTS OF STOCKHOLDERS' EQUITY":
+            self.__name = self.__name
+        # A TableItems can contain one or more tables:
+        self.__data = []
+        colNum = 0
+        rows = table.find_all('tr')
+        # Get column headers for table (use matching header with the greatest # of non-blank cells:
+        headerRows = [] 
+        for row in rows:
+            td = row.find('td', { 'style' : TableItems.__headerMatch })
+            if td and not 'background-color:' in str(td):
+                headerRows.append(row)
+        # Exit data loading if no column headers were found:
+        if not headerRows:
+            return
+        prefix = ''
+        columns = []
+        colNames = []
+        tableStarts = []
+        currColSet = 0
+        for headerRow in headerRows:
+            text = unidecode(headerRow.text)
+            match = TableItems.__monthMatch.search(unidecode(text))
+            if match:
+                prefix = match[0].strip() + ', '
+            else:
+                cells = headerRow.find_all('td')
+                tableStarts.append(headerRow)
+                columns.append({})
+                for cell in cells:
+                    text = unidecode(cell.text).strip(TableItems.__excludeChars)
+                    if text:
+                        columns[currColSet][prefix + text] = []
+                colNames.append(list(columns[currColSet].keys()))
+                prefix = ''
+                currColSet += 1
+        # Pull in row data after getting column headers:
+        currColSet = 0
+        for headerRow in tableStarts:
+            rowCount = 0
+            nextRow = headerRow.nextSibling
+            regularRowTD = ''
+            if nextRow:
+                while '(in ' in str(nextRow):
+                    nextRow = nextRow.nextSibling
+                if nextRow:
+                    regularRowTD = nextRow.find('td')
+            # End pulling in rows when hit column header:
+            while nextRow and 'background-color' in str(regularRowTD):
+                cells = nextRow.find_all('td')
+                currRowStrs = []
+                for cell in cells:
+                    text = unidecode(cell.text).strip(TableItems.__excludeChars)
+                    if text:
+                        currRowStrs.append(text)
+                if currRowStrs:
+                    # If working with uneven tables, set the first column as the 'Line Item':
+                    if len(currRowStrs) > len(columns[currColSet]):
+                        columns[currColSet]['Line Item'] = []
+                    # Append blank cell values if fewer cells than number of columns for current row
+                    # (ex: to accomodate 'Total' columns):
+                    while len(currRowStrs) < len(colNames[currColSet]):
+                        currRowStrs.append('')
+                    for colNum in range(0, len(colNames[currColSet])):
+                        data = currRowStrs[colNum]
+                        columns[currColSet][colNames[currColSet][colNum]].append(data)
+                nextRow = nextRow.nextSibling
+            currColSet += 1
+        for currColSet in range(0, len(columns)):
+            firstKey = columns[currColSet].keys()
+            numRows = 0
+            if firstKey:
+                firstKey = list(firstKey)[0]
+                numRows = len(columns[currColSet][firstKey])
+                if numRows > 0:
+                    # Load all table values:
+                    values = n.array([n.asarray(columns[currColSet][colName]) for colName in colNames[currColSet]])
+                    types = [col.dtype for col in values]
+                    dt = { 'names' : colNames[currColSet], 'formats' : types }
+                    self.__data.append(n.zeros(numRows, dtype = dt))
+                    for col in range(0, len(colNames[currColSet])):
+                        self.__data[currColSet][colNames[currColSet][col]] = values[col]
