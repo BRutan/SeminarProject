@@ -111,9 +111,9 @@ class SeminarProject(object):
         * Pull subsidiaries from each corporation's 10Ks.
         """
         db = self.DB
-        queryString = ['SELECT A.Ticker, B.Subsidiaries FROM Corporations As A ']
+        queryString = ['SELECT A.Ticker, B.Subsidiaries FROM Corporations AS A']
         queryString.append('INNER JOIN Subsidiaries As B ON A.CorpID = B.CorpID WHERE B.Subsidiaries IS NOT NULL;')
-        queryString = ''.join(queryString)
+        queryString = ' '.join(queryString)
         results = db.ExecuteQuery(queryString, getResults = True)
         self.TickerToSubs = {}
         # Determine if pulled all brands already:
@@ -121,11 +121,12 @@ class SeminarProject(object):
             for row in results.keys():
                 self.TickerToSubs[key] = results[key]
         else:
-            # Pull 10ks:
+            # Pull subsidiaries from 10-Ks:
             yearEnd = datetime.today() + offsets.YearEnd()
+            steps = Pu
             for ticker in self.Tickers:
                 doc = CorporateFiling(ticker, yearEnd)
-                self.TickerToSubs[ticker] = list(doc.Subsidiaries['Legal Name'])
+                self.TickerToSubs[ticker]
 
 
     def LoadAllBrands(self):

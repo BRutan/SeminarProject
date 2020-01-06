@@ -179,14 +179,15 @@ class CorporateFiling(object):
     ###################
     def FindSubDocument(self, exp, exactMatch):
         """
-        * Find SubDocument with name that matches passed regular expression.
+        * Find SubDocument object with name that matches passed regular expression.
         Inputs:
         * exp: Expecting regular expression string or object (if exactMatch == False), or non-regexp string (if exactMatch == True),
         to match (string).
-        * exactMatch: Put True if want to find table with name that exactly matches, else False if want to use regular 
-        expression (boolean).
-        Outputs: Will return either the first table that matches the regular expression, 
-        or None if no match.
+        * exactMatch: Put True if want to find SubDocument object with name that exactly matches regular expression 
+        (i.e. re.match() or str == name) or string, else False if want to determine if partial match 
+        the regular expression/string (i.e. re.search() or str in name).
+        Outputs: 
+        * Will return either the first table that matches the regular expression or None if no match.
         """
         errMsgs = []
         expression = None
@@ -194,28 +195,21 @@ class CorporateFiling(object):
             errMsgs.append("exactMatch must be a boolean.")
         if not isinstance(exp, CorporateFiling.__reType) and not isinstance(exp, str):
             errMsgs.append("exp must be a string/regular expression.")
-        if isinstance(exactMatch, bool):
-            # Ensure that exact match logic is sound:
-            if exactMatch == True and isinstance(exp, CorporateFiling.__reType):
-                errMsgs.append("exp must be a string if exactMatch = True.")
-            elif exactMatch == False and not isinstance(exp, str) and not isinstance(exp, CorporateFiling.__reType):
-                errMsgs.append("exp must be a regular expression object/string if exactMatch = False.")
         if errMsgs:
             raise Exception('\n'.join(errMsgs))
-        if not exactMatch and isinstance(exp, str):
-            try:
-                expression = re.compile(exp)
-            except:
-                raise Exception('Could not convert exp to regular expression.')
-        else:
-            expression = exp
 
         subDocs = self.__subDocs
         for docName in subDocs.keys():
-            if exactMatch and expression == docName:
-                return subDocs[docName]
-            elif not exactMatch and expression.match(docName):
-                return subDocs[docName]
+            if isinstance(exp, CorporateFiling.__reType):
+                if exactMatch and exp.match(docName):
+                    return subDocs[docName]
+                elif not exactMatch and exp.search(docName):
+                    return subDocs[docName]
+            elif isinstance(exp, str):
+                if exactMatch and exp == docName:
+                    return subDocs[docName]
+                elif not exactMatch and exp in docName:
+                    return subDocs[docName]
         return None
 
     def PrintTables(self, folderPath, excel = False, fileName = None):
@@ -240,7 +234,7 @@ class CorporateFiling(object):
         if errMsgs:
             raise Exception('\n'.join(errMsgs))
         if not fileName:
-            fileName = [self.Name, '_financials']
+            fileName = [self.Name, '_tables']
             if excel:
                 fileName.append('.xlsx')
             else:
@@ -252,13 +246,24 @@ class CorporateFiling(object):
         path.append(fileName)
         path = ''.join(path)
         if excel:
+            # Put tables into excel workbook:
             pass
         else:
             with open(path, 'w', newline = '') as f:
+                writer = csv.writer(f)
                 for subDoc in self.__subDocs:
-                    tables = subDoc.Tables
-                    for name in tables.keys():
-                        tables[name]
+                    for name in subDoc.Tables.keys():
+                        table = subDoc.Tables[name]
+                        writer.writerow(['<Table ' + name + '>'])
+                        # Write headers:
+                        writer.writerow(table.dtype.names)
+                        row = []
+                        for col in cols:
+                            row.append(col)
+                        writer.writerow(row)
+                        row = []
+                        # Write data:
+                        n.apply_along_axis(f.write, axis=1, arr=subDoc.Tables[name])
 
     def PrintFinancials(self, folderPath, fileName = None):
         """
@@ -505,10 +510,9 @@ class SubDocument(object):
         """
         * Find table with name that matches passed regular expression.
         Inputs:
-        * exp: Expecting regular expression string or object (if exactMatch == False), or non-regexp string (if exactMatch == True),
-        to match (string).
-        * exactMatch: Put if want to find table with name that exactly matches, else False if want to use regular 
-        expression (boolean).
+        * exp: Expecting regular expression object or string.
+        * exactMatch: Put True if want to find table with name that exactly matches regular expression or string (i.e. exp.match(name) or exp == name)
+        else False if partially match the regular expression/string (i.e. exp.search(name) or exp in name).
         Outputs: Will return either the first table that matches the regular expression, 
         or None if no match.
         """
@@ -518,27 +522,21 @@ class SubDocument(object):
             errMsgs.append("exactMatch must be a boolean.")
         if not isinstance(exp, SubDocument.__reType) and not isinstance(exp, str):
             errMsgs.append("exp must be a string/regular expression.")
-        if isinstance(exactMatch, bool):
-            # Ensure that exact match logic is sound:
-            if exactMatch == True and isinstance(exp, SubDocument.__reType):
-                errMsgs.append("exp must be a string if exactMatch = True.")
-            elif exactMatch == False and not isinstance(exp, str) and not isinstance(exp, SubDocument.__reType):
-                errMsgs.append("exp must be a regular expression object/string if exactMatch = False.")
         if errMsgs:
             raise Exception('\n'.join(errMsgs))
-        if not exactMatch and isinstance(exp, str):
-            try:
-                expression = re.compile(exp)
-            except:
-                raise Exception('Could not convert exp to regular expression.')
-        else:
-            expression = exp
+
         tables = self.__tables
         for tableName in tables.keys():
-            if exactMatch and expression == tableName:
-                return tables[tableName]
-            elif not exactMatch and expression.match(tableName):
-                return tables[tableName]
+            if isinstance(exp, SubDocument.__reType):
+                if exactMatch and exp.match(tableName):
+                    return tables[tableName]
+                elif not exactMatch and exp.search(tableName):
+                    return tables[tableName]
+            elif isinstance(exp, str):
+                if exactMatch and exp == tableName:
+                    return tables[tableName]
+                elif not exactMatch and exp in tableName:
+                    return tables[tableName]
         return None
 
     ###################################
@@ -549,6 +547,9 @@ class SubDocument(object):
         * Load all aspects of document into the object.
         """
         self.__ExtractDocName(doc)
+        if self.__name == 'EXHIBIT 21.1':
+            self.__name = self.__name
+        # if re.compile('subsidiaries', re.IGNORECASE).match(self.__name) or :
         if steps.PullText:
             self.__LoadText(doc)
         if steps.PullTables:
@@ -594,8 +595,8 @@ class SubDocument(object):
             text = unidecode(table.text).strip()
             if text and TableItem.HasColumnHeaders(table):
                 tableData = TableItem(table)
-                tableName = tableData.Name
-                if tableName:
+                if tableData.Name:
+                    tableName = tableData.Name 
                     tableCount = 2
                     while tableName in self.__tables.keys():
                         tableName = ''.join([tableData.Name, '_', str(tableCount)])
@@ -674,7 +675,7 @@ class SubDocument(object):
         """
         desc = doc.find('description')
         if desc:
-            self.__name = desc.text[0:desc.text.find('\n')]
+            self.__name = unidecode(desc.text[0:desc.text.find('\n')])
 
             
 class TableItem(object):
@@ -684,7 +685,8 @@ class TableItem(object):
     #### Store all tables with irregular info:
     irregTables = []
     __reType = type(re.compile(''))
-    __divHeaderMatch = re.compile('.*padding-top:\d+px.*')
+    __divHeaderMatch = re.compile('line-height:\d\d\d%;text-align:center;font-size:\d\dpt;')
+    #__divHeaderMatch = re.compile('.*padding-top:\d+px.*')
     __excludeChars = ''.join(list(set(string.punctuation + ' '))).replace('(', '').replace(')', '').replace('-', '')
     __excludeNames = { 'page' : True, 'table of contents' : True }
     __footerPattern = re.compile('__(_)+')
@@ -699,8 +701,6 @@ class TableItem(object):
     # Constructors:
     #####################
     def __init__(self, table):
-        if 'Segment' in str(table):
-            table = table
         self.__ExtractTableName(table)
         if self.__name:
             self.__LoadData(table)
@@ -754,16 +754,15 @@ class TableItem(object):
         * Determine if name is excluded.
         """
         return name.lower() in TableItem.__excludeNames.keys()
-    def FindColumn(self, exp, exactMatch = False):
+    def FindColumn(self, exp, exactMatch):
         """
-        * Find column with name that matches passed regular expression.
+        * Find column in this table with name that matches passed regular expression.
         Inputs:
-        * exp: Expecting regular expression string or object (if exactMatch == False), or non-regexp string (if exactMatch == True),
-        to match (string).
-        * exactMatch: Put if want to find exact column match, else False if want to use regular 
-        expression (boolean).
-        Outputs: Will return either the first column that matches the regular expression, 
-        or None if no match.
+        * exp: Expecting regular expression object or string.
+        * exactMatch: Put True if want to find column with name that exactly matches regular expression or string (i.e. exp.match(name) or exp == name)
+        else False if partially match the regular expression/string (i.e. exp.search(name) or exp in name).
+        Outputs: 
+        * Will return either the first table that matches the regular expression, or None if no match.
         """
         errMsgs = []
         expression = None
@@ -771,32 +770,25 @@ class TableItem(object):
             errMsgs.append("exactMatch must be a boolean.")
         if not isinstance(exp, TableItem.__reType) and not isinstance(exp, str):
             errMsgs.append("exp must be a string/regular expression.")
-        if isinstance(exactMatch, bool):
-            # Ensure that exact match logic is sound:
-            if exactMatch == True and isinstance(exp, TableItem.__reType):
-                errMsgs.append("exp must be a string if exactMatch = True.")
-            elif exactMatch == False and not isinstance(exp, str) and not isinstance(exp, TableItem.__reType):
-                errMsgs.append("exp must be a regular expression object/string if exactMatch = False.")
         if errMsgs:
             raise Exception('\n'.join(errMsgs))
         table = self.__data
         rows, cols = table.shape
-        if not exactMatch and isinstance(exp, str):
-            try:
-                expression = re.compile(exp)
-            except:
-                raise Exception('Could not convert exp to regular expression.')
-        else:
-            expression = exp
-
         for col in range(0, cols):
             colName = table.dtype.names[col]
-            if exactMatch and expression == colName:
-                return table[:,col]
-            elif not exactMatch and expression.match(colName):
-                return table[:,col]
+            if isinstance(exp, TableItem.__reType):
+                if exactMatch and exp.match(colName):
+                    return table[:,col]
+                elif not exactMatch and exp.search(colName):
+                    return table[:,col]
+            elif isinstance(exp, str):
+                if exactMatch and exp == colName:
+                    return table[:,col]
+                elif not exactMatch and exp in colName:
+                    return table[:,col]
         return None
 
+    
     #####################
     # Private Helpers:
     #####################
@@ -898,18 +890,28 @@ class TableItem(object):
         """
         * Get the name of the table.
         """
-        tag = table.parent.find_previous('div', { 'style' : TableItem.__divHeaderMatch })
-        while tag.parent.name == 'div':
+        tableName = []
+        tag = table
+        while tag and tag.parent.name != 'text':
             tag = tag.parent
-        if tag.previous_sibling and tag.previous_sibling.name == 'table':
-            tag = tag.previous_sibling
-        font = tag.find('font', { 'style' : TableItem.__tableTitlePattern })
-        while not font:
-            tag = tag.find_previous('div', { 'style' : TableItem.__divHeaderMatch })
-            font = tag.find('font', { 'style' : TableItem.__tableTitlePattern })
 
-        if tag and tag.text.lower() != 'index':
-            self.__name = TableItem.__tableStripPattern.sub('', unidecode(tag.text))
+        boldFont = re.compile('.*font-weight:bold.*')
+        # Find the first div tag with bold font text:
+        div = tag.find_previous('div')
+        while div and not div.find('font' , { 'style' : boldFont }) and div.parent.name == 'text':
+            div = div.find_previous('div')
+            if div.find('font' , { 'style' : boldFont }) and not unidecode(div.find('font' , { 'style' : boldFont }).text).strip():
+                div = div.find_previous('div')
+        if div.find('font', { 'style' : boldFont}):
+            font = div.find('font', { 'style' : boldFont})
+            tableName.append(unidecode(font.text).strip())
+            tableName = ''.join(tableName)
+            #while tag and boldFont.search(str(tag)) and tag.previousSibling and tag.previousSibling.name == 'div':
+            #    tableName.append(unidecode(tag.text).strip())
+                #tag = tag.find_previous('div' : { 'style' : '' })
+
+        if tableName and tableName.lower() != 'index':
+            self.__name = TableItem.__tableStripPattern.sub('', tableName)
         else:
             self.__name = ''
 
