@@ -212,6 +212,34 @@ class CorporateFiling(object):
                     return subDocs[docName]
         return None
 
+    def FindTable(self, exp, exactMatch):
+        """
+        * Find first table within all SubDocuments that matches passed regular expression or string.
+        Inputs:
+        * exp: Expecting regular expression object or string.
+        * exactMatch: Put True if want to find table with name that exactly matches regular expression or string (i.e. exp.match(name) or exp == name)
+        else False if partially match the regular expression/string (i.e. exp.search(name) or exp in name).
+        Outputs: 
+        * Will return tuple containing (SubDocument, TableItem) for first table that matches the regular expression, 
+        or (None, None) if no match.
+        """
+        errMsgs = []
+        expression = None
+        if not isinstance(exactMatch, bool):
+            errMsgs.append("exactMatch must be a boolean.")
+        if not isinstance(exp, CorporateFiling.__reType) and not isinstance(exp, str):
+            errMsgs.append("exp must be a string/regular expression.")
+        if errMsgs:
+            raise Exception('\n'.join(errMsgs))
+
+        for key in self.SubDocuments.keys():
+            doc = self.SubDocuments[key]
+            table = doc.FindTable(exp, exactMatch)
+            if table:
+                return (doc, table)
+
+        return (None, None)
+
     def PrintTables(self, folderPath, excel = False, fileName = None):
         """
         * Print tables only to csv/xlsx file at folder path.
@@ -402,7 +430,8 @@ class CorporateFiling(object):
         for doc in docs:
             subDoc = SubDocument(type, steps, doc, self.Ticker)
             name = subDoc.Name
-            self.__subDocs[name] = subDoc
+            if name:
+                self.__subDocs[name] = subDoc
 
     def __GetLinks(self, date):
         """
@@ -508,7 +537,7 @@ class SubDocument(object):
     ###################################
     def FindTable(self, exp, exactMatch):
         """
-        * Find table with name that matches passed regular expression.
+        * Find table with name that matches passed regular expression or string.
         Inputs:
         * exp: Expecting regular expression object or string.
         * exactMatch: Put True if want to find table with name that exactly matches regular expression or string (i.e. exp.match(name) or exp == name)
@@ -547,9 +576,8 @@ class SubDocument(object):
         * Load all aspects of document into the object.
         """
         self.__ExtractDocName(doc)
-        if self.__name == 'EXHIBIT 21.1':
-            self.__name = self.__name
-        # if re.compile('subsidiaries', re.IGNORECASE).match(self.__name) or :
+        if not self.__name:
+            return
         if steps.PullText:
             self.__LoadText(doc)
         if steps.PullTables:
@@ -673,11 +701,13 @@ class SubDocument(object):
         """
         * Get name/description of document.
         """
+        self.__name = ''
         desc = doc.find('description')
         if desc:
             self.__name = unidecode(desc.text[0:desc.text.find('\n')])
+        else:
+            desc = desc
 
-            
 class TableItem(object):
     """
     * Loads and stores data contained in html table for easy access.
@@ -714,6 +744,7 @@ class TableItem(object):
         * Return names of columns in table, in list format if multiple
         tables exist, or None.
         """
+        cols = {}
         if not self.__data:
             return None
         else:
@@ -772,20 +803,20 @@ class TableItem(object):
             errMsgs.append("exp must be a string/regular expression.")
         if errMsgs:
             raise Exception('\n'.join(errMsgs))
+
         table = self.__data
-        rows, cols = table.shape
-        for col in range(0, cols):
-            colName = table.dtype.names[col]
+        columns = table.dtype.names
+        for column in columns:
             if isinstance(exp, TableItem.__reType):
-                if exactMatch and exp.match(colName):
-                    return table[:,col]
-                elif not exactMatch and exp.search(colName):
-                    return table[:,col]
+                if exactMatch and exp.match(column):
+                    return table[column]
+                elif not exactMatch and exp.search(column):
+                    return table[column]
             elif isinstance(exp, str):
-                if exactMatch and exp == colName:
-                    return table[:,col]
-                elif not exactMatch and exp in colName:
-                    return table[:,col]
+                if exactMatch and exp == column:
+                    return table[column]
+                elif not exactMatch and exp in column:
+                    return table[column]
         return None
 
     
@@ -802,7 +833,7 @@ class TableItem(object):
         if self.__name == "CONSOLIDATED STATEMENTS OF STOCKHOLDERS' EQUITY":
             self.__name = self.__name
             TableItem.irregTables.append(table)
-        self.__data = []
+        self.__data = None
         colNum = 0
         rows = table.find_all('tr')
         # Get column headers for table:
@@ -819,7 +850,6 @@ class TableItem(object):
         columns = []
         colNames = []
         tableStarts = []
-        currColSet = 0
         try:
             for headerRow in headerRows:
                 text = unidecode(headerRow.text)
@@ -836,9 +866,7 @@ class TableItem(object):
                             columns[currColSet][prefix + text] = []
                     colNames.append(list(columns[currColSet].keys()))
                     prefix = ''
-                    currColSet += 1
             # Pull in row data after getting column headers:
-            currColSet = 0
             for headerRow in tableStarts:
                 rowCount = 0
                 nextRow = headerRow.nextSibling
@@ -868,8 +896,7 @@ class TableItem(object):
                             data = currRowStrs[colNum]
                             columns[currColSet][colNames[currColSet][colNum]].append(data)
                     nextRow = nextRow.nextSibling
-                currColSet += 1
-            for currColSet in range(0, len(columns)):
+
                 firstKey = columns[currColSet].keys()
                 numRows = 0
                 if firstKey:
@@ -880,7 +907,7 @@ class TableItem(object):
                         values = n.array([n.asarray(columns[currColSet][colName]) for colName in colNames[currColSet]])
                         types = [col.dtype for col in values]
                         dt = { 'names' : colNames[currColSet], 'formats' : types }
-                        self.__data.append(n.zeros(numRows, dtype = dt))
+                        self.__data = n.zeros(numRows, dtype = dt)
                         for col in range(0, len(colNames[currColSet])):
                             self.__data[currColSet][colNames[currColSet][col]] = values[col]
         except:
@@ -902,7 +929,7 @@ class TableItem(object):
             div = div.find_previous('div')
             if div.find('font' , { 'style' : boldFont }) and not unidecode(div.find('font' , { 'style' : boldFont }).text).strip():
                 div = div.find_previous('div')
-        if div.find('font', { 'style' : boldFont}):
+        if div and div.find('font', { 'style' : boldFont}):
             font = div.find('font', { 'style' : boldFont})
             tableName.append(unidecode(font.text).strip())
             tableName = ''.join(tableName)

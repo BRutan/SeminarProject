@@ -7,6 +7,7 @@
 import csv
 import re
 import os
+import string
 import mysql.connector as msc
 from mysql.connector import errorcode
 
@@ -23,6 +24,9 @@ class MYSQLDatabase(object):
     __TypeWrapMap = { "varchar" : "\"", "text" : "\"", "char" : "\"", "blob" : "\"", "binary" : "\"", "varbinary" : "\"",
                      "date" : "\"", "time" : "\"", "datetime" : "\"", "timestamp" : "\""}
     __InvalidOrds = [43, 64]
+    __selectStmtFilter = { 'inner' : 0, 'outer' : 0}
+    __tableTokenStop = { 'group' : 0, 'having' : 0 }
+    __stripPunct = ''.join(list(set(string.punctuation + ' ')))
     # TODO: Determine invalid characters in text strings: https://dev.mysql.com/doc/refman/8.0/en/string-literals.html
 
     #######################################
@@ -156,6 +160,7 @@ class MYSQLDatabase(object):
         ##############
         # Append all column names, type declaration strings:
         ##############
+        lowerCols = {}
         for columnName in columns.keys():
             variables.append(columnName + " " + columns[columnName][0])
             pKey = columns[columnName][1]
@@ -165,6 +170,7 @@ class MYSQLDatabase(object):
             # Check if column should use foreign key relationship with another table:
             if columns[columnName][2]:
                 fKeyStrings.append("FOREIGN KEY(" + columnName + ") REFERENCES " + columns[columnName][2])
+            lowerCols[columnName.lower()] = columns[columnName]
         if pKeyStr:
             variables.append(pKeyStr)
         if len(fKeyStrings) > 0:
@@ -177,7 +183,7 @@ class MYSQLDatabase(object):
         ##############
         cursor.execute(''.join(createTableStrings))
         tableName = tableName.lower()
-        self.__tables[tableName] = columns
+        self.__tables[tableName] = lowerCols
         cursor.close()
         
     def ExecuteQuery(self, query, schema = None, getResults = False, shouldCommit = False):
@@ -201,39 +207,52 @@ class MYSQLDatabase(object):
             # Return nothing if a select statement wasn't entered:
             if "select" not in query:
                 return None
+            rawResults = cursor.fetchall()
             # Output results as dictionary mapping column name to value.
             # Extract table name and selected columns from select stmt:
-            tokens = str.split(query, ' ')
+            # Remove INNER/OUTER reserved words:
+            tokens = [token.strip(MYSQLDatabase.__stripPunct) for token in str.split(query, ' ')]
+            tokens = list(filter(lambda a : not a in MYSQLDatabase.__selectStmtFilter.keys(), tokens))
             fromIndex = tokens.index("from")
-            potTableTokens = tokens[fromIndex + 1: len(tokens)]
-            potColumnTokens = tokens[tokens.index("select") + 1: fromIndex]
-            tableName = ''
+            columnTokens = tokens[tokens.index("select") + 1: fromIndex]
+            aliasToTable = {}
+            index = fromIndex
+            while 'as' in tokens[index : len(tokens)]:
+                # We assume table name appears to immediate left of AS, alias to right:
+                index = index + tokens[index : len(tokens)].index("as")
+                tableName = tokens[index - 1]
+                alias = tokens[index + 1]
+                aliasToTable[alias] = tableName
+                index += 1
+            # Get table name from query:
+            tableNames = []
+            tableAreaStop = []
+            for index, token in enumerate(tokens, 0):
+                if token in MYSQLDatabase.__tableTokenStop.keys():
+                    tableAreaStop.append(index)
+            tableAreaStop.append(len(tokens) - 1)
+            tableAreaStop = min(tableAreaStop)
             output = {}
-            columns = []
-            for token in potTableTokens:
-                if tableName:
-                    break
-                for key in self.__tables.keys():
-                    if token in str(key):
-                        tableName = key
-                        break
+            index = 0
+            # Replace aliases in column names with full table name:
+            columnNames = []
+            for column in columnTokens:
+                index = column.find('.')
+                if index > -1:
+                    alias = column[0:index]
+                    validCol = column.replace(alias + '.', aliasToTable[alias] + '.')
+                    columnNames.append(validCol)
+                    output[validCol] = []
+                else:
+                    output[column] = []
+                    columnNames.append(column)
 
-            for token in potColumnTokens:
-                if token in self.__tables[tableName].keys():
-                    columns.append(token)
-            
-            # Output data as dictionary mapping row number to dictionary mapping column to value:
-            rawResults = cursor.fetchall() 
-            rowNum = 0
+            # Output data as dictionary mapping { ColName -> [Values] }:
             for result in rawResults:
-                output[rowNum] = {}
                 colNum = 0
-                for column in columns:
-                    if column not in output[rowNum].keys():
-                        output[rowNum][column] = result[colNum]
-                    colNum += 1
-                    output[rowNum][column].append(result[columnCounter])
-                rowNum += 1
+                for column in columnNames:
+                    output[column].append(result[colNum])
+                    colNum += 1  
 
             return output
 
@@ -249,7 +268,6 @@ class MYSQLDatabase(object):
         if not schema:
             schema = self.ActiveSchema
         errMsgs = self.__CheckParams(tableName, schema, columns)
-
         tableName = tableName.lower()
         if len(errMsgs) > 0:
             raise Exception('\n'.join(errMsgs))
@@ -274,7 +292,7 @@ class MYSQLDatabase(object):
         # Determine appropriate wrapping for data given column type:
         wrapMap = {}
         for column in columns.keys():
-            wrapMap[column] = self.__GetDataWrap(self.__tables[tableName][column][0])
+            wrapMap[column] = self.__GetDataWrap(self.__tables[tableName][column.lower()][0])
             
         ###########################
         # Generate full insert query string using passed data:
@@ -389,8 +407,7 @@ class MYSQLDatabase(object):
             errMsgs.append("Schema does not exist yet in database (please create with CreateSchema()).")
         # Ensure that schema exists, passed table does/does not exist (depending on tableExists):
         if tableExists and not tableName in self.__tables.keys():
-            pass
-            #errMsgs.append("Table already exists in database.")
+            errMsgs.append("Table already exists in database.")
         elif not tableExists and tableName in self.__tables.keys():
             errMsgs.append("Table already exists in schema.")
 

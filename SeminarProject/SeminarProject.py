@@ -4,7 +4,7 @@
 # 
 
 from BrandQuery import BrandQuery
-from CorporateFiling import CorporateFiling, DocumentType
+from CorporateFiling import CorporateFiling, DocumentType, PullingSteps
 import csv
 import DataBase
 from datetime import datetime, timedelta
@@ -32,19 +32,20 @@ class SeminarProject(object):
         """
         self.DB = database
         self.Tickers = {}
+        # Get tickers from CSV file at tickerPath:
+        self.__CorpNumToTicker = {}
+        self.__TickerToCorpNum = {}
         self.__PullTickers(tickerPath)
         self.CorpTableColumns = {"CorpID" : ["int", True, ""], "Name" : ["text", False, ""], 
-                                 "Ticker" : ["varchar(5)", False, ""], "Industry" : ["text", False, ""]}
-        self.CorpBrandTableColumns = {"CorpID" : ["int", True, "Corporations(CorpID)"], "Brands" : ["text", False, ""]}
-        self.SubsidariesTableColumns = {"CorpID" : ["int", True, "Corporations(CorpID)"], "Subsidiaries" : ["text", False, ""]}
-        self.DataColumns = { "CorpID" : ["int", True, "Corporations(CorpID)"], "SearchTerm" : ["text", False, ""], 
+                                 "Ticker" : ["varchar(5)", False, ""], "Industry" : ["text", False, ""], "Weight" : ["float", False, ""] }
+        self.CorpBrandTableColumns = {"CorpID" : ["int", False, "Corporations(CorpID)"], "Brands" : ["text", False, ""]}
+        self.SubsidariesTableColumns = {"CorpID" : ["int", False, "Corporations(CorpID)"], "Subsidiaries" : ["text", False, ""]}
+        self.DataColumns = { "CorpID" : ["int", False, "Corporations(CorpID)"], "SearchTerm" : ["text", False, ""], 
                        "User" : ["text " + SeminarProject.__utfSupport, False, ''], "Date" : ["date", False, ""], 
                        "Tweet" : ["text " + SeminarProject.__utfSupport, False, ''] }
         self.CorpToBrands = {}
         self.__PulledBrands = {}
-        for ticker in self.Tickers.keys():
-            self.__PulledBrands[ticker] = []
-
+        
     #######################
     # Interface Methods:
     #######################
@@ -60,8 +61,6 @@ class SeminarProject(object):
     def CreateTables(self):
         """
         * Create all tables to store data.
-        Parameters:
-        * tickerToCorps: Dictionary mapping Ticker -> ( CorpName, Industry).
         """
         # Connect to database, pull in current company table names:
         db = self.DB
@@ -69,33 +68,31 @@ class SeminarProject(object):
         self.TickerToTable = {}
         # Skip creating corporations table if already created:
         if not db.TableExists("Corporations"):
-            tables = db.Tables
             corpTableColumns = self.CorpTableColumns
             # Create Corporations table that maps corporation name to ticker, insert all corporations into database:
             db.CreateTable("Corporations", corpTableColumns, schema = "Research_Seminar_Project")
             corpData = {}
             for key in corpTableColumns.keys():
-                if key == "CorpID":
-                    corpData[key] = list(range(1, len(tickerToCorps.keys())))
-                elif key == "Ticker":
-                    corpData[key] = tickerToCorps.keys()
-                elif key == "Name":
-                    corpData[key] = []
-                    for value in tickerToCorps.values():
-                        corpData[key].append(value[0])
-                elif key == "Industry":
-                    corpData[key] = []
-                    for value in tickerToCorps.values():
-                        corpData[key].append(value[1])
+                corpData[key] = []
+                for ticker in tickerToCorps.keys():
+                    if key == "CorpID":
+                        corpData[key].append(self.__TickerToCorpNum[ticker]) 
+                    elif key == "Ticker":
+                        corpData[key].append(ticker)
+                    elif key == "Name":
+                        corpData[key].append(tickerToCorps[ticker][0])
+                    elif key == "Industry":
+                        corpData[key].append(tickerToCorps[ticker][1])
+                    elif key == "Weight":
+                        corpData[key].append(tickerToCorps[ticker][2])
             # Insert pulled corporation data from local XLY file into Corporations database:
             db.InsertValues("Corporations", corpData)
         if not db.TableExists("Subsidiaries"):
-            columns = self.SubsidariesTableColumns
-            db.CreateTable("Subsidiaries", columns, schema = "Research_Seminar_Project")
+            db.CreateTable("Subsidiaries", self.SubsidariesTableColumns, schema = "Research_Seminar_Project")
         if not db.TableExists("CorporateBrands"):
-            columns = self.CorpBrandTableColumns
-            db.CreateTable("CorporateBrands", columns, schema = "Research_Seminar_Project")
-        # Insert all data into the Corporations table:
+            db.CreateTable("CorporateBrands", self.CorpBrandTableColumns, schema = "Research_Seminar_Project")
+
+        # Create all Corporations tables:
         dataColumns = self.DataColumns
         tableSig = "Tweets_%s"
         # Create Tweets_{Ticker} table for each corporation:
@@ -108,7 +105,9 @@ class SeminarProject(object):
 
     def GetSubsidiaries(self):
         """
-        * Pull subsidiaries from each corporation's 10Ks.
+        * Pull subsidiaries from each corporation's 10K, and load into 
+        database. If already loaded subsidiaries into database then pull 
+        using query.
         """
         db = self.DB
         queryString = ['SELECT A.Ticker, B.Subsidiaries FROM Corporations AS A']
@@ -116,18 +115,40 @@ class SeminarProject(object):
         queryString = ' '.join(queryString)
         results = db.ExecuteQuery(queryString, getResults = True)
         self.TickerToSubs = {}
-        # Determine if pulled all brands already:
-        if results and len(set([result[row]['subsidiaries'] for row in results.keys()])) == len(self.Tickers.keys()):
-            for row in results.keys():
-                self.TickerToSubs[key] = results[key]
-        else:
-            # Pull subsidiaries from 10-Ks:
+        # Determine if pulled some/all subsidiaries already:
+        if results:
+            tickers = results['corporations.ticker']
+            subs = results['subsidiaries.subsidiaries']
+            row = 0
+            for ticker in tickers:
+                if ticker not in self.TickerToSubs.keys():
+                    self.TickerToSubs[ticker] = []
+                self.TickerToSubs[ticker].append(subs[row])
+                row += 1
+        if len(self.TickerToSubs.keys()) < len(self.Tickers.keys()):
+            # Pull some subsidiaries from 10-Ks, if haven't been pulled in yet:
             yearEnd = datetime.today() + offsets.YearEnd()
-            steps = Pu
-            for ticker in self.Tickers:
-                doc = CorporateFiling(ticker, yearEnd)
-                self.TickerToSubs[ticker]
-
+            subs = re.compile('subsidiaries', re.IGNORECASE)
+            name = re.compile('name', re.IGNORECASE)
+            steps = PullingSteps(False, True, False)
+            insertData = {'CorpID' : [], 'Subsidiaries' : []}
+            for ticker in self.Tickers.keys():
+                if ticker not in self.TickerToSubs.keys():
+                    doc = CorporateFiling(ticker, DocumentType.TENK, steps, date = yearEnd)
+                    tableDoc, table = doc.FindTable(subs, False)
+                    self.TickerToSubs[ticker] = []
+                    nameColumn = None
+                    if table:
+                        nameColumn = table.FindColumn(name, False)
+                    if nameColumn:
+                        nameColumn = list(nameColumn)
+                        self.TickerToSubs[ticker] = nameColumn
+                    # Add the corporation's name itself:
+                    self.TickerToSubs[ticker].append(self.Tickers[ticker][0])
+                    # Insert data into Subsidiaries table:
+                    insertData['CorpID'] = [self.__TickerToCorpNum[ticker]] * len(self.TickerToSubs[ticker])
+                    insertData['Subsidiaries'] = self.TickerToSubs[ticker]
+                    db.InsertValues("Subsidiaries", insertData)
 
     def LoadAllBrands(self):
         """
@@ -220,12 +241,17 @@ class SeminarProject(object):
         with open(tickerPath, 'r') as f:
             reader = csv.reader(f)
             atHeader = True
-            # Columns:
+            # Map { Ticker -> (Name, Sector, Weight) }:
+            # CSV Columns:
             # Name	Ticker	Identifier	SEDOL	Weight	Sector	Shares Held	Local Currency
+            corpNum = 1
             for row in reader:
                 if not atHeader:
                     ticker = row[1].strip()
-                    tickers[ticker] = (row[0], row[5])
+                    tickers[ticker] = (row[0].strip(), row[5].strip(), row[4].strip())
+                    self.__CorpNumToTicker[corpNum] = ticker
+                    self.__TickerToCorpNum[ticker] = corpNum
+                    corpNum += 1
                 atHeader = False
 
         self.Tickers = tickers
