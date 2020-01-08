@@ -114,7 +114,9 @@ class SeminarProject(object):
         queryString = ['SELECT A.Ticker, B.Subsidiaries FROM Corporations AS A']
         queryString.append('INNER JOIN Subsidiaries As B ON A.CorpID = B.CorpID WHERE B.Subsidiaries IS NOT NULL;')
         queryString = ' '.join(queryString)
-        results = db.ExecuteQuery(queryString, getResults = True)
+        # Testing:
+        #results = db.ExecuteQuery(queryString, getResults = True)
+        results = None
         self.TickerToSubs = {}
         # Determine if pulled some/all subsidiaries already:
         if results and len(results[list(results.keys())[0]]) > 0:
@@ -133,9 +135,12 @@ class SeminarProject(object):
             name = re.compile('name', re.IGNORECASE)
             steps = PullingSteps(False, True, False)
             insertData = {'CorpID' : [], 'Subsidiaries' : []}
+            # Testing:
+            tableDocPath = 'D:\\Git Repos\\SeminarProject\\SeminarProject\\SeminarProject\\Notes\\TableNames\\'
             for ticker in self.Tickers.keys():
                 if ticker not in self.TickerToSubs.keys():
                     doc = CorporateFiling(ticker, DocumentType.TENK, steps, date = yearEnd)
+                    doc.PrintTables(tableDocPath)
                     gc.collect()
                     continue
                     tableDoc, table = doc.FindTable(subs, False)

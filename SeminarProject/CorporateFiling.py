@@ -89,6 +89,8 @@ class CorporateFiling(object):
         * date: If provided, will pull document with filing date closest to passed date 
         from SEC Edgar website (datetime or string).
         * htmlPath: If provided, will pull document from local html file using xml tags (string).
+        Optional Arguments:
+        * corpName: Official company name (string).
         """
         errMsgs = []
         if not isinstance(ticker, str):
@@ -101,6 +103,9 @@ class CorporateFiling(object):
             raise Exception('\n'.join(errMsgs))
         self.__ticker = ticker
         self.__type = CorporateFiling.__types[type]
+        self.__corpName = ''
+        if 'corpName' in args.keys():
+            self.__corpName = args[corpName]
         hasArg = False
         # Pull tags from html file if provided:
         if 'htmlPath' in args.keys():
@@ -142,6 +147,9 @@ class CorporateFiling(object):
     # Properties:
     ####################
     @property
+    def CompanyName(self):
+        return self.__corpName
+    @property
     def Date(self):
         return self.__date
     @property
@@ -159,9 +167,10 @@ class CorporateFiling(object):
     @property
     def Name(self):
         """
-        * Return name of object (for identifying in local files).
+        * Return name of object, containing document type and filing date information 
+        (i.e. <Ticker>_<DocumentType>_<FilingDate>).
         """
-        return ''.join([self.Ticker, '_', self.DocumentType, '_', self.DateStr])
+        return ''.join([self.Ticker, '_', self.DocumentType.replace('-','_'), '_', self.DateStr])
     @property
     def SubDocuments(self):
         """
@@ -190,7 +199,7 @@ class CorporateFiling(object):
     @staticmethod
     def GetUniqueDescriptions(db):
         if db.TableExists('UniqueDescriptions'):
-            query =
+            query = ''
             for key in CorporateFiling.UniqueDescriptions.keys():
                 data['description'].append(key)
                 data['type'].append(CorporateFiling.UniqueDescriptions[key])
@@ -273,7 +282,8 @@ class CorporateFiling(object):
         if not isinstance(folderPath, str):
             errMsgs.append('folderPath must be a string.')
         elif not os.path.exists(folderPath):
-            errMsgs.append('folderPath does not exist.')
+            # Create folder path if does not exist already:
+            os.mkdir(folderPath)
         if not isinstance(excel, bool):
             errMsgs.append('excel must be boolean.')
         if fileName and not isinstance(fileName, str):
@@ -295,26 +305,38 @@ class CorporateFiling(object):
             path.append('\\')
         path.append(fileName)
         path = ''.join(path)
+        # Exit immediately if file with name already exists:
+        if os.path.exists(path):
+            return
+        # Write all tables to file:
         if excel:
+            maxSheetTitleLen = 255
             # Put tables into excel workbook:
             pass
         else:
             with open(path, 'w', newline = '') as f:
                 writer = csv.writer(f)
-                for subDoc in self.__subDocs:
+                for subDoc in self.__subDocs.keys():
                     writer.writerow(['Document:', subDoc])
-                    for name in subDoc.Tables.keys():
-                        table = subDoc.Tables[name]
-                        writer.writerow(['Title:', name])
-                        colnames = table.ColumnNames
-                        # Write headers:
-                        writer.writerow(colnames)
-                        rows, cols = table.shape
-                        for row in range(0, rows):
-                            currRow = []
-                            for col in colnames:
-                                currRow.append(table[col][row])
-                            writer.writerow(currRow)
+                    for tableName in self.__subDocs[subDoc].Tables.keys():
+                        table = self.__subDocs[subDoc].Tables[tableName]
+                        writer.writerow(['Table Title:', tableName])
+                        # Only write table attributes if data was loaded:
+                        if table.HasData:
+                            colnames = table.ColumnNames
+                            # Write headers:
+                            writer.writerow(colnames)
+                            rows = table.Data.shape[0]
+                            for row in range(0, rows):
+                                currRow = []
+                                for col in colnames:
+                                    currRow.append(table.Data[col][row])
+                                writer.writerow(currRow)
+                        if table.HasFootNotes:
+                            # Write all table footnotes:
+                            writer.writerow(['FootNotes:'])
+                            for row in range(1, len(table.FootNotes.keys()) + 1):
+                                writer.writerow([row, table.FootNotes[row]])
                         writer.writerow([])
                         writer.writerow([])
 
@@ -426,12 +448,13 @@ class CorporateFiling(object):
         * Pull information from local file or SEC website.
         """
         # Testing:
-        path = 'D:\\Git Repos\\SeminarProject\\SeminarProject\\SeminarProject\\Notes\\TableNames\\'
-        filePath = ''.join([path, self.Ticker, '_Tables.html'])
-        if self.Ticker == 'MCD':
-            self.Ticker == 'MCD'
-        if os.path.exists(filePath):
-            return
+        #path = 'D:\\Git Repos\\SeminarProject\\SeminarProject\\SeminarProject\\Notes\\TableNames\\'
+        #filePath = ''.join([path, self.Ticker, '_Tables.html'])
+        #if self.Ticker == 'MCD':
+        #    self.Ticker == 'MCD'
+        #if os.path.exists(filePath):
+        #    return
+
         # Pull from local file if path was specified:
         if customDocPath != None:
             # Pull from local file:
@@ -453,30 +476,33 @@ class CorporateFiling(object):
             tables = []
             for link in links:
                 soup = Soup(requests.get(link).text, 'lxml')
+                soup.div.unwrap()
                 docs = soup.find_all('document')
                 for doc in docs:
-                    tables.extend(doc.find_all('table'))
-                    subDoc = SubDocument(type, steps, doc, self.Ticker)
-                    name = subDoc.Name
-                    if name:
-                        self.__subDocs[name] = subDoc
-            SoupTesting.PrintTableHTML(tables = tables, filePath = filePath)
-        else:
+                    # Testing:
+                    #tables.extend(doc.find_all('table'))
+                    subDoc = SubDocument(type, steps, doc, self.Ticker, self.CompanyName)
+                    if subDoc.Name:
+                        self.__subDocs[subDoc.Name] = subDoc
+            # Testing:
+            #SoupTesting.PrintTableHTML(tables = tables, filePath = filePath)
+        elif not soup is None:
+            soup.div.unwrap()
+            # Pull data from single Soup object (loaded from .html document or custom .brl document):
             docs = soup.find_all('document')
             for doc in docs:
-                subDoc = SubDocument(type, steps, doc, self.Ticker)
-                name = subDoc.Name
-                if name:
-                    self.__subDocs[name] = subDoc
+                subDoc = SubDocument(type, steps, doc, self.Ticker, self.CompanyName)
+                if subDoc.Name:
+                    self.__subDocs[subDoc.Name] = subDoc
 
         # Testing:
-        SoupTesting.PrintTableAttributes(self, path)
+        #SoupTesting.PrintTableAttributes(self, path)
 
         # Print all irregular tables:
-        if TableItem.irregTables:
-            fileName = ''.join([path, 'IrregTables_', self.Ticker, '.html'])
-            SoupTesting.PrintTableHTML(tables = TableItem.irregTables, filePath = fileName)
-            TableItem.irregTables = []
+        #if TableItem.irregTables:
+        #    fileName = ''.join([path, 'IrregTables_', self.Ticker, '.html'])
+        #    SoupTesting.PrintTableHTML(tables = TableItem.irregTables, filePath = fileName)
+        #    TableItem.irregTables = []
 
     def __GetDocumentLinks(self, date, pullFinancials):
         """
@@ -520,6 +546,10 @@ class CorporateFiling(object):
         # Get filing date:
         self.__date = docFilingDate
         targetLinks = []
+        # Attempt to get company name from website:
+        if not self.__corpName and soup.find('span', {'class' : re.compile('companyName')}):
+            nameText = unidecode(soup.find('span', {'class' : re.compile('companyName')}).contents[0]).strip()
+            self.__corpName = re.sub('\(.+\)', '', nameText).strip()
         # We do not want to pull in links to graphics or PDFs:
         exp = ''.join(['(', self.__type, '|EX-\d+(\..+)?)'])
         xbrlMatch = re.compile('xml', re.IGNORECASE)
@@ -586,10 +616,10 @@ class SubDocument(object):
     __periodPattern = re.compile('^.*[0-9]{4}Q[0-9](YTD|QTD)?')
     __reType = type(re.compile(''))
     __titlePattern = re.compile('^font-family:inherit;font-size:\d+pt;font-weight:bold$;')
-    def __init__(self, docType, steps, doc, ticker):
+    def __init__(self, docType, steps, doc, ticker, corpName):
         self.__type = docType
         self.__finDataRE = (re.compile(ticker.lower() + ':.+', re.UNICODE), re.compile('us-gaap:.+', re.UNICODE))
-        self.__Load(steps, doc)
+        self.__Load(steps, doc, corpName)
 
     ###################################
     # Properties:
@@ -600,12 +630,6 @@ class SubDocument(object):
         * Return { LineItem -> { Period -> FinancialsData }} mapping.
         """
         return self.__financials
-    @property
-    def FootNotes(self):
-        """
-        * All table footnotes in document.
-        """
-        return self.__footnotes
     @property 
     def Name(self):
         """
@@ -663,7 +687,7 @@ class SubDocument(object):
     ###################################
     # Private Helpers:
     ###################################
-    def __Load(self, steps, doc):
+    def __Load(self, steps, doc, corpName):
         """
         * Load all aspects of document into the object.
         """
@@ -673,7 +697,7 @@ class SubDocument(object):
         if steps.PullText:
             self.__LoadText(doc)
         if steps.PullTables:
-            self.__LoadTables(doc)
+            self.__LoadTables(doc, corpName)
         if steps.PullFinancials:
             self.__LoadFinancials(doc)
 
@@ -705,7 +729,7 @@ class SubDocument(object):
                     self.__financials[period] = {}
                 self.__financials[period][lineItem] = int(text)
 
-    def __LoadTables(self, doc):
+    def __LoadTables(self, doc, corpName):
         """
         * Structure all tables in the document.
         """
@@ -714,7 +738,7 @@ class SubDocument(object):
         for table in tables:
             text = unidecode(table.text).strip()
             if text and TableItem.HasColumnHeaders(table):
-                tableData = TableItem(table)
+                tableData = TableItem(table, corpName)
                 if tableData.HasData:
                     tableName = tableData.Name 
                     tableCount = 2
@@ -822,13 +846,14 @@ class TableItem(object):
     #####################
     # Constructors:
     #####################
-    def __init__(self, table):
+    def __init__(self, table, corpName):
         self.__data = None
         self.__name = ''
-        self.__ExtractTableName(table)
+        self.__footnotes = {}
+        self.__ExtractTableName(table, corpName)
         if self.__name:
-            self.__LoadData(table)
-            self.__GetFootNotes(table)
+            self.__LoadData(table, corpName)
+            self.__GetFootNotes(table, corpName)
     #####################
     # Properties:
     #####################
@@ -859,7 +884,16 @@ class TableItem(object):
         """
         * Is True if data has been loaded.
         """
-        return not self.__data is None
+        if isinstance(self.__data, list):
+            return len(self.__data) > 0 
+        else:
+            return self.__data.shape[0] > 0
+    @property
+    def HasFootnotes(self):
+        """
+        * Is True if footnotes have been found for this table.
+        """
+        return len(self.__footnotes.keys()) > 0
     @property
     def Name(self):
         """
@@ -920,16 +954,14 @@ class TableItem(object):
     #####################
     # Private Helpers:
     #####################
-    def __LoadData(self, table):
+    def __LoadData(self, table, corpName):
         """
         * Set the table data using passed BeautifulSoup <table> tag from SEC Edgar html 
         document.
         Inputs:
         * table: Expecting BeautifulSoup <table> tag.
         """
-        if self.__name == "CONSOLIDATED STATEMENTS OF STOCKHOLDERS' EQUITY":
-            self.__name = self.__name
-        self.__data = None
+        self.__data = []
         colNum = 0
         rows = table.find_all('tr')
         yearMatch = re.compile('(19|20)[0-9][0-9]')
@@ -962,7 +994,7 @@ class TableItem(object):
                     prefix = [prefKey, dateMatch.search(text)[0], ', ', '']
                 else:
                     headerRows.append(row)
-            elif text and not boldFont:
+            elif text and headerRows:
                 dataRows.append(row)
         # Exit data loading if no column headers were found:
         if not headerRows or not dataRows:
@@ -975,7 +1007,7 @@ class TableItem(object):
             text = strip.sub('', text).strip()
             if not text and cellCount == 0:
                 columns['Line Item'] = []
-            if text:
+            elif text:
                 if prefix and yearMatch.match(text):
                     prefix[3] = text
                     dateval = datetime.strptime(''.join([prefix[1], prefix[2], prefix[3]]), '%B %d, %Y')
@@ -1020,43 +1052,53 @@ class TableItem(object):
         except:
             TableItem.irregTables.append(table)
 
-    def __ExtractTableName(self, table):
+    def __ExtractTableName(self, table, corpName):
         """
         * Get the name of the table.
         """
+        # Skip loading table if is table of contents (contains 'Items'):
+        for row in table.find_all('tr'):
+            text = unidecode(row.text).strip()
+            if text and re.search('item \d', text, re.IGNORECASE):
+                return
         tableName = []
         tag = table
+        # Get to outermost tag that is child to <text> tag (contains all information for <document>):
         while tag and tag.parent.name != 'text':
             tag = tag.parent
-
         boldFontRE = re.compile('.*font-weight:bold.*')
-        # Find the first div tag with bold font text:
-        div = tag.find_previous('div')
-        unitRE = re.compile('\(in.+\)', re.IGNORECASE)
-        while div and not div.find('font' , { 'style' : boldFontRE }) and div.parent.name == 'text':
+        corpNameRE = re.compile(corpName, re.IGNORECASE) if corpName else None
+        indexRE = re.compile('index', re.IGNORECASE)
+        noteRE = re.compile('note \d+( |-)? ', re.IGNORECASE)
+        unitRE = re.compile('\(in .+\)', re.IGNORECASE)
+        # Find the title of the table (assume that is first div tag with bold font text, that does not match with any above
+        # regular expressions):
+        div = tag
+        while div and div.parent.name == 'text':
             div = div.find_previous('div')
             boldFont = div.find('font' , { 'style' : boldFontRE }) if div else None
             text = unidecode(boldFont.text).strip() if boldFont else ''
-            if text == '(in millions)':
-                text = text
-            if not text or unitRE.match(text):
-                div = div.find_previous('div')
+            if boldFont and text and not unitRE.match(text) and not (corpNameRE.match(text) if corpNameRE else True) and not indexRE.match(text):
+                break
         if div and div.find('font', { 'style' : boldFontRE}):
             font = div.find('font', { 'style' : boldFontRE})
+            if unidecode(font.text) == '(in millions)':
+                font = font
+                SoupTesting.PrintTagsHTML(div.find_previous('text'), 'D:\\Git Repos\\SeminarProject\\SeminarProject\\SeminarProject\\Notes\\IrregDocs\\' + self.Name + '_IrregDoc.html')
             tableName.append(unidecode(font.text).strip())
             tableName = ''.join(tableName)
+            tableName = noteRE.sub('', tableName)
+            
             #while tag and boldFont.search(str(tag)) and tag.previousSibling and tag.previousSibling.name == 'div':
             #    tableName.append(unidecode(tag.text).strip())
                 #tag = tag.find_previous('div' : { 'style' : '' })
 
-        if tableName and tableName.lower() != 'index':
             self.__name = TableItem.__tableStripPattern.sub('', tableName)
         
-    def __GetFootNotes(self, table):
+    def __GetFootNotes(self, table, corpName):
         """
         * Get footnotes for table (if present).
         """
-        self.__footnotes = {}
         tag = table.parent
         while tag.parent.name == 'div':
             tag = tag.parent
@@ -1116,13 +1158,13 @@ class SoupTesting(object):
         with open(filePath, 'w', newline = '') as f:
             writer = csv.writer(f)
             # Write headers:
-            writer.writerow(['Name:', 'Rows:', 'Columns:'])
+            writer.writerow(['Name:', 'Rows:', 'Columns:', 'ColumnNames:'])
             for table in tables:
                 if table.HasData:
-                    rows, cols = table.Data.shape
+                    rows, cols, columnNames = (table.Data.shape[0], len(table.ColumnNames), ' '.join(table.ColumnNames))
                 else:
-                    rows, cols = (0, 0)
-                writer.writerow([table.Name, rows, cols])
+                    rows, cols, columnNames = (0, 0, ' ')
+                writer.writerow([table.Name, rows, cols, columnNames])
 
     @staticmethod
     def PrintTableAttributes(doc, folderPath):
@@ -1138,7 +1180,7 @@ class SoupTesting(object):
             return
         with open(path, 'w', newline = '') as f:
             writer = csv.writer(f)
-            writer.writerow(['SubDoc:', 'Name:', 'Rows:', 'ColumnCount:', 'ColumnNames'])
+            writer.writerow(['SubDoc:', 'Name:', 'Rows:', 'ColumnCount:', 'ColumnNames:'])
             if not doc.SubDocuments:
                 return
             for subDoc in doc.SubDocuments.keys():
@@ -1230,7 +1272,7 @@ class SoupTesting(object):
                 writer.writerow([key, uniqueElems[key]])
 
     @staticmethod
-    def PrintTags(tags, path, prettify = False):
+    def PrintTagsHTML(tags, path, prettify = False):
         """
         * Print all tags to file.
         """
