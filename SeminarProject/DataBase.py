@@ -321,21 +321,38 @@ class MYSQLDatabase(object):
         errMsgs = []
         if not schema:
             schema = self.ActiveSchema
-        if os.path.exists(csvPath):
-            errMsgs.append("csv at csvPath already exists.")
-        if "select" not in query or "SELECT" not in query:
+        if not isinstance(csvPath,str):
+            errMsgs.append("csvPath must be a string.")
+        elif '.csv' not in csvPath:
+            csvPath = csvPath[0:csvPath.rfind('.')] + '.csv'
+        if not isinstance(query, str):
+            errMsgs.append("query must be a string.")
+        elif "select" not in query or "SELECT" not in query:
             errMsgs.append("query must be a select statement.")
-        if schema not in self.__schemas.keys():
+        if schema and not isinstance(schema, str):
+            errMsgs.append("schema must be a string if specified.")
+        elif schema not in self.__schemas.keys():
             errMsgs.append("schema does not exist in database.")
+        if isinstance(csvPath, str) and os.path.exists(csvPath):
+            errMsgs.append("csv at csvPath already exists.")
 
         if len(errMsgs) > 0:
             msg = '\n'.join(errMsgs)
             raise Exception(msg)
 
         # Pull data from select statement:
-        data = self.ExecuteQuery(schema, query, True)
-        for column in data.keys():
-            pass
+        data = self.ExecuteQuery(query, schema, getResults=True)
+        with open(csvPath, 'w', newline='') as f:
+            writer = csv.writer(f)
+            # Write headers:
+            columnHeaders = list(data.keys())
+            writer.writerow(columnHeaders)
+            rowLen = len(data[columnHeaders[0]])
+            for row in range(0, rowLen):
+                currRow = []
+                for column in data.keys():
+                    currRow.append(data[column][row])
+                writer.writerow(currRow)
 
     def TableExists(self, tableName):
         """
@@ -364,9 +381,6 @@ class MYSQLDatabase(object):
         * Return copy of schemas in the database (as list containing all schema names).
         """
         return list(self.__schemas.keys()).copy()
-    @ActiveSchema.setter
-    def ActiveSchema(self, schema):
-        pass
     #######################
     # Helper Functions:
     #######################

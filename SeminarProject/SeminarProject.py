@@ -4,10 +4,11 @@
 # 
 
 from BrandQuery import BrandQuery
-from CorporateFiling import CorporateFiling, DocumentType, PullingSteps
+from CorporateFiling import CorporateFiling, TableItem, DocumentType, PullingSteps, SoupTesting
 import csv
 import DataBase
 from datetime import datetime, timedelta
+import gc
 import memcache
 from pandas.tseries import offsets
 from numpy.random import choice as choose
@@ -55,8 +56,8 @@ class SeminarProject(object):
         """
         self.CreateTables()
         self.GetSubsidiaries()
-        self.LoadAllBrands()
-        self.SampleAndInsertTweets()
+        #self.LoadAllBrands()
+        #self.SampleAndInsertTweets()
 
     def CreateTables(self):
         """
@@ -116,7 +117,7 @@ class SeminarProject(object):
         results = db.ExecuteQuery(queryString, getResults = True)
         self.TickerToSubs = {}
         # Determine if pulled some/all subsidiaries already:
-        if results:
+        if results and len(results[list(results.keys())[0]]) > 0:
             tickers = results['corporations.ticker']
             subs = results['subsidiaries.subsidiaries']
             row = 0
@@ -135,12 +136,14 @@ class SeminarProject(object):
             for ticker in self.Tickers.keys():
                 if ticker not in self.TickerToSubs.keys():
                     doc = CorporateFiling(ticker, DocumentType.TENK, steps, date = yearEnd)
+                    gc.collect()
+                    continue
                     tableDoc, table = doc.FindTable(subs, False)
                     self.TickerToSubs[ticker] = []
                     nameColumn = None
                     if table:
                         nameColumn = table.FindColumn(name, False)
-                    if nameColumn:
+                    if not nameColumn is None:
                         nameColumn = list(nameColumn)
                         self.TickerToSubs[ticker] = nameColumn
                     # Add the corporation's name itself:
@@ -149,7 +152,7 @@ class SeminarProject(object):
                     insertData['CorpID'] = [self.__TickerToCorpNum[ticker]] * len(self.TickerToSubs[ticker])
                     insertData['Subsidiaries'] = self.TickerToSubs[ticker]
                     db.InsertValues("Subsidiaries", insertData)
-
+                    
     def LoadAllBrands(self):
         """
         * Pull all brands from WIPO website, push into database.
