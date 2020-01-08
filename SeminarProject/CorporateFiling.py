@@ -270,7 +270,7 @@ class CorporateFiling(object):
 
     def PrintTables(self, folderPath, excel = False, fileName = None):
         """
-        * Print tables only to csv/xlsx file at folder path.
+        * Print all tables in CorporateFiling with data to csv/xlsx file at folder path.
         Required Arguments:
         * folderPath: Folder path to write file (string). If fileName is None
         then will use default name.
@@ -462,6 +462,7 @@ class CorporateFiling(object):
             return
         soup = None
         links = []
+
         if htmlPath != None:
             soup = Soup(open(htmlPath, 'r'), "lxml")
         elif date:
@@ -476,7 +477,7 @@ class CorporateFiling(object):
             tables = []
             for link in links:
                 soup = Soup(requests.get(link).text, 'lxml')
-                soup.div.unwrap()
+                self.__CleanSoup(soup)
                 docs = soup.find_all('document')
                 for doc in docs:
                     # Testing:
@@ -487,7 +488,7 @@ class CorporateFiling(object):
             # Testing:
             #SoupTesting.PrintTableHTML(tables = tables, filePath = filePath)
         elif not soup is None:
-            soup.div.unwrap()
+            self.__CleanSoup(soup)
             # Pull data from single Soup object (loaded from .html document or custom .brl document):
             docs = soup.find_all('document')
             for doc in docs:
@@ -584,6 +585,14 @@ class CorporateFiling(object):
                         targetLinks.append(''.join(link))
         return targetLinks
 
+    def __CleanSoup(self, soup):
+        """
+        * Unwrap all critical tags (font, rows, cells, tables) from 'div' tags.
+        """
+        tags = soup.find_all('div')
+        for tag in tags:
+            tag.unwrap()
+
     #################
     # Static Helpers:
     #################
@@ -618,6 +627,10 @@ class SubDocument(object):
     __titlePattern = re.compile('^font-family:inherit;font-size:\d+pt;font-weight:bold$;')
     def __init__(self, docType, steps, doc, ticker, corpName):
         self.__type = docType
+        self.__name = ''
+        self.__financials = {}
+        self.__tables = {}
+        self.__textSections = {}
         self.__finDataRE = (re.compile(ticker.lower() + ':.+', re.UNICODE), re.compile('us-gaap:.+', re.UNICODE))
         self.__Load(steps, doc, corpName)
 
@@ -627,7 +640,7 @@ class SubDocument(object):
     @property
     def Financials(self):
         """
-        * Return { LineItem -> { Period -> FinancialsData }} mapping.
+        * Return { Period -> { LineItem -> Amount }} mapping.
         """
         return self.__financials
     @property 
@@ -705,7 +718,6 @@ class SubDocument(object):
         """
         * Load all text from document in easily accessible format.
         """
-        self.__textSections = {}
         if self.__type == DocumentType.TENK:
             self.__LoadSections10K(doc)
         elif self.__type == DocumentType.EIGHTK:
@@ -718,7 +730,6 @@ class SubDocument(object):
         * Load all xbrl-type financials in the document.
         """
         financials = doc.find_all(self.__finDataRE)
-        self.__financials = {}
         for tag in financials:
             text = unidecode(tag.text.strip())
             if SubDocument.__financialsPattern.match(text):
@@ -733,7 +744,6 @@ class SubDocument(object):
         """
         * Structure all tables in the document.
         """
-        self.__tables = {}
         tables = doc.find_all('table')
         for table in tables:
             text = unidecode(table.text).strip()
@@ -817,7 +827,6 @@ class SubDocument(object):
         """
         * Get name/description of document.
         """
-        self.__name = ''
         desc = doc.find('description')
         if desc:
             self.__name = unidecode(desc.text[0:desc.text.find('\n')])
@@ -836,7 +845,7 @@ class TableItem(object):
     __excludeChars = ''.join(list(set(string.punctuation + ' '))).replace('(', '').replace(')', '').replace('-', '')
     __excludeNames = { 'page' : True, 'table of contents' : True }
     __footerPattern = re.compile('__(_)+')
-    __footerTextPattern = re.compile('\([0-9]+\)')
+    __footerTextPattern = re.compile('(\([0-9]+\)|\*){1}')
     __headerMatch = re.compile('.*solid \#000000.*')
     __monthMatch = re.compile('(Year Ended)? (Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|(Nov|Dec)(?:ember)?) [1-3]?[0-9]?', re.IGNORECASE)
     __tableStripPattern = re.compile('item \d+\.', re.IGNORECASE)
@@ -847,7 +856,7 @@ class TableItem(object):
     # Constructors:
     #####################
     def __init__(self, table, corpName):
-        self.__data = None
+        self.__data = []
         self.__name = ''
         self.__footnotes = {}
         self.__ExtractTableName(table, corpName)
@@ -961,7 +970,6 @@ class TableItem(object):
         Inputs:
         * table: Expecting BeautifulSoup <table> tag.
         """
-        self.__data = []
         colNum = 0
         rows = table.find_all('tr')
         yearMatch = re.compile('(19|20)[0-9][0-9]')
@@ -1073,18 +1081,16 @@ class TableItem(object):
         unitRE = re.compile('\(in .+\)', re.IGNORECASE)
         # Find the title of the table (assume that is first div tag with bold font text, that does not match with any above
         # regular expressions):
-        div = tag
-        while div and div.parent.name == 'text':
-            div = div.find_previous('div')
-            boldFont = div.find('font' , { 'style' : boldFontRE }) if div else None
-            text = unidecode(boldFont.text).strip() if boldFont else ''
-            if boldFont and text and not unitRE.match(text) and not (corpNameRE.match(text) if corpNameRE else True) and not indexRE.match(text):
+        font = tag
+        while font and font.parent.name == 'text':
+            font = font.find_previous('font', {'style' : boldFontRE })
+            text = unidecode(font.text).strip() if font else ''
+            if font and text and not unitRE.match(text) and not (corpNameRE.match(text) if corpNameRE else True) and not indexRE.match(text):
                 break
-        if div and div.find('font', { 'style' : boldFontRE}):
-            font = div.find('font', { 'style' : boldFontRE})
+        if font:
             if unidecode(font.text) == '(in millions)':
                 font = font
-                SoupTesting.PrintTagsHTML(div.find_previous('text'), 'D:\\Git Repos\\SeminarProject\\SeminarProject\\SeminarProject\\Notes\\IrregDocs\\' + self.Name + '_IrregDoc.html')
+                SoupTesting.PrintTagsHTML(font.find_previous('text'), 'D:\\Git Repos\\SeminarProject\\SeminarProject\\SeminarProject\\Notes\\IrregDocs\\' + self.Name + '_IrregDoc.html')
             tableName.append(unidecode(font.text).strip())
             tableName = ''.join(tableName)
             tableName = noteRE.sub('', tableName)
@@ -1099,25 +1105,26 @@ class TableItem(object):
         """
         * Get footnotes for table (if present).
         """
-        tag = table.parent
-        while tag.parent.name == 'div':
-            tag = tag.parent
-        footnote = tag.nextSibling
-        if str(type(footnote)) == "<class 'bs4.element.NavigableString'>":
+        if re.search('properties', self.Name, re.IGNORECASE):
+            self.Name == 'properties'
+        footnote = table.nextSibling
+        if str(type(footnote)) != "<class 'bs4.element.NavigableString'>" and footnote.name != 'table' and TableItem.__footerPattern.match(unidecode(footnote.text).strip()):
+            footnote = footnote.nextSibling
+        if not footnote.name == 'table':
             return
         # We assume that if table is immediately followed by div tag with underscores, then is a footnote table:
-        if TableItem.__footerPattern.match(unidecode(footnote.text).strip()):
-            table = footnote.nextSibling
-            num = 1
-            while table.name == 'table':
-                if TableItem.__footerTextPattern.search(unidecode(table.text)):
-                    rows = table.find_all('tr')
-                    for row in rows:
-                        rowText = TableItem.__footerTextPattern.sub('', unidecode(row.text).strip())
-                        if rowText:
-                            self.__footnotes[num] = rowText
-                            num += 1
-                table = table.nextSibling
+        num = 1
+        while footnote.name == 'table':
+            if TableItem.__footerTextPattern.match(unidecode(footnote.text)):
+                rows = footnote.find_all('tr')
+                for row in rows:
+                    rowText = TableItem.__footerTextPattern.sub('', unidecode(row.text).strip())
+                    if rowText:
+                        self.__footnotes[num] = rowText
+                        num += 1
+                footnote = footnote.nextSibling
+            else:
+                break
 
 class SoupTesting(object):
     @staticmethod
@@ -1295,7 +1302,6 @@ class SoupTesting(object):
         """
         * Write soup object to local file.
         """
-        sys.setrecursionlimit(1000000)
         path = path.replace('-', '_')
         if '.html' not in path:
             path = path[0:path.rfind('.')] + '.html'
@@ -1307,13 +1313,13 @@ class SoupTesting(object):
         enclosingFolder = path[0:path.rfind('\\')]
         if not os.path.exists(enclosingFolder):
             os.mkdir(enclosingFolder)
+        if prettify:
+            html = soup.prettify()
+        else:
+            html = str(soup)
         with open(path,"w") as f:
-            if prettify:
-                html = soup.prettify()
-            else:
-                html = soup
-                for i in range(0, len(html)):
-                    try:
-                        f.write(html[i])
-                    except Exception:
-                        pass
+            for i in range(0, len(html)):
+                try:
+                    f.write(html[i])
+                except Exception:
+                    pass
