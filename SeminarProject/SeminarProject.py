@@ -56,8 +56,8 @@ class SeminarProject(object):
         """
         self.CreateTables()
         self.GetSubsidiaries()
-        #self.LoadAllBrands()
-        #self.SampleAndInsertTweets()
+        self.LoadAllBrands()
+        self.SampleAndInsertTweets()
 
     def CreateTables(self):
         """
@@ -114,9 +114,9 @@ class SeminarProject(object):
         queryString = ['SELECT A.Ticker, B.Subsidiaries FROM Corporations AS A']
         queryString.append('INNER JOIN Subsidiaries As B ON A.CorpID = B.CorpID WHERE B.Subsidiaries IS NOT NULL;')
         queryString = ' '.join(queryString)
+        results = db.ExecuteQuery(queryString, getResults = True)
         # Testing:
-        #results = db.ExecuteQuery(queryString, getResults = True)
-        results = None
+        #results = None
         self.TickerToSubs = {}
         # Determine if pulled some/all subsidiaries already:
         if results and len(results[list(results.keys())[0]]) > 0:
@@ -134,29 +134,29 @@ class SeminarProject(object):
             subs = re.compile('subsidiaries', re.IGNORECASE)
             name = re.compile('name', re.IGNORECASE)
             steps = PullingSteps(False, True, False)
-            insertData = {'CorpID' : [], 'Subsidiaries' : []}
             # Testing:
-            tableDocPath = 'D:\\Git Repos\\SeminarProject\\SeminarProject\\SeminarProject\\Notes\\TableNames\\'
+            #tableDocPath = 'D:\\Git Repos\\SeminarProject\\SeminarProject\\SeminarProject\\Notes\\TableNames\\'
             for ticker in self.Tickers.keys():
                 if ticker not in self.TickerToSubs.keys():
                     doc = CorporateFiling(ticker, DocumentType.TENK, steps, date = yearEnd)
-                    doc.PrintTables(tableDocPath)
-                    gc.collect()
-                    continue
-                    tableDoc, table = doc.FindTable(subs, False)
+                    insertData = {'CorpID' : [], 'Subsidiaries' : []}
+                    # Testing:
+                    #doc.PrintTables(tableDocPath)
+                    #SoupTesting.PrintTableAttributes(doc, tableDocPath)
                     self.TickerToSubs[ticker] = []
+                    tableDoc, table = doc.FindTable(subs, False)
                     nameColumn = None
                     if table:
                         nameColumn = table.FindColumn(name, False)
                     if not nameColumn is None:
-                        nameColumn = list(nameColumn)
-                        self.TickerToSubs[ticker] = nameColumn
+                        self.TickerToSubs[ticker] = list(nameColumn)
                     # Add the corporation's name itself:
                     self.TickerToSubs[ticker].append(self.Tickers[ticker][0])
                     # Insert data into Subsidiaries table:
                     insertData['CorpID'] = [self.__TickerToCorpNum[ticker]] * len(self.TickerToSubs[ticker])
                     insertData['Subsidiaries'] = self.TickerToSubs[ticker]
                     db.InsertValues("Subsidiaries", insertData)
+                    gc.collect()
                     
     def LoadAllBrands(self):
         """
@@ -242,10 +242,13 @@ class SeminarProject(object):
 
     def __PullTickers(self, tickerPath):
         """
-        * Pull in all consumer discretionary tickers from local file.
-        Store Ticker -> ( Name, Sector )
+        * Pull in all consumer discretionary tickers and other attributes from local file.
+        Store Ticker -> ( Name, Sector, Weight) )
         """
         tickers = {}
+        nameToTicker = {}
+        classMatch = re.compile('Class [A-Z]')
+        unassignedMatch = re.compile('unassigned', re.IGNORECASE)
         with open(tickerPath, 'r') as f:
             reader = csv.reader(f)
             atHeader = True
@@ -255,8 +258,21 @@ class SeminarProject(object):
             corpNum = 1
             for row in reader:
                 if not atHeader:
+                    name = row[0].strip()
+                    name = classMatch.sub('', name).strip()
                     ticker = row[1].strip()
-                    tickers[ticker] = (row[0].strip(), row[5].strip(), row[4].strip())
+                    weight = row[4].strip()
+                    sector = row[5].strip()
+                    # Skip companies with unassigned sectors:
+                    if unassignedMatch.search(sector):
+                        continue
+                    # If hit another share class for same company, then accumulate the weight in the index:
+                    if name in nameToTicker.keys():
+                        origTicker = nameToTicker[name]
+                        tickers[origTicker] = (name, sector, str(float(weight) + float(tickers[origTicker][2])))
+                    else:
+                        tickers[ticker] = (name, sector, weight)
+                        nameToTicker[name] = ticker
                     self.__CorpNumToTicker[corpNum] = ticker
                     self.__TickerToCorpNum[ticker] = corpNum
                     corpNum += 1

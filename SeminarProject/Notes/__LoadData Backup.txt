@@ -1,88 +1,111 @@
-"""
+def __LoadData(self, table, corpName):
+        """
         * Set the table data using passed BeautifulSoup <table> tag from SEC Edgar html 
         document.
         Inputs:
         * table: Expecting BeautifulSoup <table> tag.
         """
-        if self.__name == "CONSOLIDATED STATEMENTS OF STOCKHOLDERS' EQUITY":
-            self.__name = self.__name
-        # A TableItems can contain one or more tables:
-        self.__data = []
         colNum = 0
         rows = table.find_all('tr')
-        # Get column headers for table (use matching header with the greatest # of non-blank cells:
+        yearMatch = re.compile('(19|20)[0-9][0-9]')
+        prefixMatch = re.compile('(((Year|Month|Quarter) Ended ){0,1}[A-Z]{3,9} [0-9]+,?|Fiscal)', re.IGNORECASE)
+        hasLettersMatch = re.compile('[A-Z]+', re.IGNORECASE)
+        dateMatch = re.compile('[A-Z]{3,9} [0-9]+', re.IGNORECASE)
+        boldFontMatch = re.compile('.*font-weight:bold.*')
+        stripAll = re.compile('(\(\d+\)|\(in.+\))', re.IGNORECASE)
+        negMatch = re.compile('^\(\d+[,.]{0,1}\d?\)$')
+        hasDigitsMatch = re.compile('\d+')
+        swap = {'year ended' : 'YE', 'month ended' : 'ME', 'fiscal' : 'YE', 'quarter ended' : 'QE'}
+        # Get column headers for table:
         headerRows = [] 
-        for row in rows:
-            td = row.find('td', { 'style' : TableItems.__headerMatch })
-            if td and not 'background-color:' in str(td):
-                headerRows.append(row)
-        # Exit data loading if no column headers were found:
-        if not headerRows:
-            return
-        prefix = ''
-        columns = []
+        dataRows = []
+        columns = {}
         colNames = []
-        tableStarts = []
-        currColSet = 0
-        for headerRow in headerRows:
-            text = unidecode(headerRow.text)
-            match = TableItems.__monthMatch.search(unidecode(text))
-            if match:
-                prefix = match[0].strip() + ', '
-            else:
-                cells = headerRow.find_all('td')
-                tableStarts.append(headerRow)
-                columns.append({})
-                for cell in cells:
-                    text = unidecode(cell.text).strip(TableItems.__excludeChars)
-                    if text:
-                        columns[currColSet][prefix + text] = []
-                colNames.append(list(columns[currColSet].keys()))
-                prefix = ''
-                currColSet += 1
+        prefix = []
+        for row in rows:
+            text = unidecode(row.text).strip()
+            boldFont = row.find('font', {'style': boldFontMatch})
+            # Determine if need to include a 'prefix' (ex: Year Ended December 31, appears in column header encircling multiple column headers):
+            if not headerRows and text and boldFont:
+                prefixResult = prefixMatch.match(text)
+                if prefixResult and not prefix:
+                    text = text.strip().lower()
+                    prefKey = ''
+                    for key in swap.keys():
+                        if key in text:
+                            prefKey = swap[key]
+                            break
+                    if not prefKey:
+                        prefKey = prefKey
+                    dateStr = dateMatch.search(text)[0] if dateMatch.search(text) else ''
+                    dateStr += ',' if dateStr and not dateStr.endswith(',') else ''
+                    prefix = [prefKey, dateStr.strip(), ' ', '']
+                else:
+                    headerRows.append(row)
+            elif text and headerRows:
+                dataRows.append(row)
+        # Exit data loading if no column headers were found:
+        if not headerRows or not dataRows:
+            return
+        # Get the column names:
+        cells = headerRows[0].find_all('td')
+        cellCount = 0
+        for cell in cells:
+            text = unidecode(cell.text).strip(TableItem.__excludeChars)
+            text = stripAll.sub('', text).strip()
+            if not text and cellCount == 0:
+                columns['Line Item'] = []
+            elif text:
+                if prefix and yearMatch.match(text):
+                    prefix[len(prefix) - 1] = text
+                    dateVal = ''
+                    if prefix[1]: 
+                        dateVal = datetime.strptime(''.join([prefix[1], prefix[2], prefix[3]]), '%B %d, %Y')
+                        dateVal = dateVal.strftime('%m/%d/%Y')
+                    else:
+                        dateVal = text
+                    columns[''.join([prefix[0], ' ', dateVal])] = []
+                else:
+                    columns[text] = []
+            cellCount += 1
+        colNames = list(columns.keys())
+        # Exit if could not find column names:
+        if not colNames:
+            return
+        
         # Pull in row data after getting column headers:
-        currColSet = 0
-        for headerRow in tableStarts:
-            rowCount = 0
-            nextRow = headerRow.nextSibling
-            regularRowTD = ''
-            if nextRow:
-                while '(in ' in str(nextRow):
-                    nextRow = nextRow.nextSibling
-                if nextRow:
-                    regularRowTD = nextRow.find('td')
-            # End pulling in rows when hit column header:
-            while nextRow and 'background-color' in str(regularRowTD):
-                cells = nextRow.find_all('td')
-                currRowStrs = []
-                for cell in cells:
-                    text = unidecode(cell.text).strip(TableItems.__excludeChars)
-                    if text:
-                        currRowStrs.append(text)
-                if currRowStrs:
-                    # If working with uneven tables, set the first column as the 'Line Item':
-                    if len(currRowStrs) > len(columns[currColSet]):
-                        columns[currColSet]['Line Item'] = []
-                    # Append blank cell values if fewer cells than number of columns for current row
-                    # (ex: to accomodate 'Total' columns):
-                    while len(currRowStrs) < len(colNames[currColSet]):
-                        currRowStrs.append('')
-                    for colNum in range(0, len(colNames[currColSet])):
-                        data = currRowStrs[colNum]
-                        columns[currColSet][colNames[currColSet][colNum]].append(data)
-                nextRow = nextRow.nextSibling
-            currColSet += 1
-        for currColSet in range(0, len(columns)):
-            firstKey = columns[currColSet].keys()
-            numRows = 0
-            if firstKey:
-                firstKey = list(firstKey)[0]
-                numRows = len(columns[currColSet][firstKey])
-                if numRows > 0:
-                    # Load all table values:
-                    values = n.array([n.asarray(columns[currColSet][colName]) for colName in colNames[currColSet]])
-                    types = [col.dtype for col in values]
-                    dt = { 'names' : colNames[currColSet], 'formats' : types }
-                    self.__data.append(n.zeros(numRows, dtype = dt))
-                    for col in range(0, len(colNames[currColSet])):
-                        self.__data[currColSet][colNames[currColSet][col]] = values[col]
+        for row in dataRows:
+            cells = row.find_all('td')
+            currRowStrs = []
+            for col, cell in enumerate(cells):
+                text = unidecode(cell.text).strip()
+                text = text if not hasLettersMatch.search(text) else stripAll.sub('', text)
+                if text and hasDigitsMatch.search(text):
+                    # Check for orphan ')' in adjacent cells:
+                    if text.startswith('(') and not text.endswith(')') and col < len(cells) - 1 and unidecode(cells[col + 1].text).strip() == ')':
+                        text += ')'
+                    if negMatch.match(text):
+                        currRowStrs.append('-' + text.strip('()'))
+                    elif text.strip(TableItem.__excludeChars + ')'):
+                        currRowStrs.append(text.strip(TableItem.__excludeChars + ')'))
+                elif text.strip('()') and (hasLettersMatch.search(text) or hasDigitsMatch.search(text)):
+                    currRowStrs.append(text.strip())
+            if currRowStrs:
+                # Append blank cell values if fewer cells than number of columns for current row
+                # (ex: to accomodate 'Total' columns):
+                while len(currRowStrs) < len(colNames):
+                    currRowStrs.append('')
+                for colNum in range(0, len(colNames)):
+                    data = currRowStrs[colNum]
+                    columns[colNames[colNum]].append(data)
+        # Store table data in numpy array:
+        firstKey = list(columns.keys())[0]
+        numRows = len(columns[firstKey])
+        if numRows > 0:
+            # Load all table values:
+            values = n.array([n.asarray(columns[colName]) for colName in colNames])
+            types = [col.dtype for col in values]
+            dt = { 'names' : colNames, 'formats' : types }
+            self.__data = n.zeros(numRows, dtype = dt)
+            for col in range(0, len(colNames)):
+                self.__data[colNames[col]] = values[col]

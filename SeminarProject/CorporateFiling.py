@@ -11,6 +11,7 @@ from bs4 import BeautifulSoup as Soup
 import csv
 from datetime import date, datetime
 from enum import Enum
+import _locale
 import pandas as p 
 import numpy as n
 import re
@@ -317,21 +318,27 @@ class CorporateFiling(object):
             with open(path, 'w', newline = '') as f:
                 writer = csv.writer(f)
                 for subDoc in self.__subDocs.keys():
+                    # Only write subdocument attributes if it has tables:
+                    if not self.__subDocs[subDoc].HasTables:
+                        continue
+                    writer.writerow(['-' * 10])
                     writer.writerow(['Document:', subDoc])
+                    writer.writerow(['-' * 10])
                     for tableName in self.__subDocs[subDoc].Tables.keys():
                         table = self.__subDocs[subDoc].Tables[tableName]
-                        writer.writerow(['Table Title:', tableName])
                         # Only write table attributes if data was loaded:
-                        if table.HasData:
-                            colnames = table.ColumnNames
-                            # Write headers:
-                            writer.writerow(colnames)
-                            rows = table.Data.shape[0]
-                            for row in range(0, rows):
-                                currRow = []
-                                for col in colnames:
-                                    currRow.append(table.Data[col][row])
-                                writer.writerow(currRow)
+                        if not table.HasData:
+                            continue
+                        writer.writerow(['Table Title:', tableName])
+                        colnames = table.ColumnNames
+                        # Write headers:
+                        writer.writerow(colnames)
+                        rows = table.Data.shape[0]
+                        for row in range(0, rows):
+                            currRow = []
+                            for col in colnames:
+                                currRow.append(str(table.Data[col][row]))
+                            writer.writerow(currRow)
                         if table.HasFootNotes:
                             # Write all table footnotes:
                             writer.writerow(['FootNotes:'])
@@ -447,14 +454,6 @@ class CorporateFiling(object):
         """
         * Pull information from local file or SEC website.
         """
-        # Testing:
-        #path = 'D:\\Git Repos\\SeminarProject\\SeminarProject\\SeminarProject\\Notes\\TableNames\\'
-        #filePath = ''.join([path, self.Ticker, '_Tables.html'])
-        #if self.Ticker == 'MCD':
-        #    self.Ticker == 'MCD'
-        #if os.path.exists(filePath):
-        #    return
-
         # Pull from local file if path was specified:
         if customDocPath != None:
             # Pull from local file:
@@ -474,19 +473,24 @@ class CorporateFiling(object):
         # Document is divided into multiple <document> tags, containing text, financials, tables with footnotes:
         self.__subDocs = {}
         if links:
-            tables = []
+            # Testing:
+            rawTables = []
+            cleanTables = []
+            path = 'D:\\Git Repos\\SeminarProject\\SeminarProject\\SeminarProject\\Notes\\TableNames\\'
+            filePath = ''.join([path, self.Ticker, '_Tables.html'])
             for link in links:
                 soup = Soup(requests.get(link).text, 'lxml')
+                # Testing:
+                rawTables.extend(soup.find_all('table'))
                 self.__CleanSoup(soup)
+                cleanTables.extend(soup.find_all('table'))
+                SoupTesting.PrintTableHTML(tables = rawTables, filePath = ''.join([path, 'Company HTML Tables Raw\\', self.Ticker, '_RawHTML.html']))
+                SoupTesting.PrintTableHTML(tables = cleanTables, filePath = ''.join([path, 'Company HTML Tables Unwrapped\\', self.Ticker, '_UnwrappedHTML.html']))
                 docs = soup.find_all('document')
                 for doc in docs:
-                    # Testing:
-                    #tables.extend(doc.find_all('table'))
                     subDoc = SubDocument(type, steps, doc, self.Ticker, self.CompanyName)
                     if subDoc.Name:
                         self.__subDocs[subDoc.Name] = subDoc
-            # Testing:
-            #SoupTesting.PrintTableHTML(tables = tables, filePath = filePath)
         elif not soup is None:
             self.__CleanSoup(soup)
             # Pull data from single Soup object (loaded from .html document or custom .brl document):
@@ -520,7 +524,11 @@ class CorporateFiling(object):
         # Extract links to document with nearest filing date:
         targetDate = datetime(year = date.year, day = date.day, month = date.month)
         minDays = -1
-        data = requests.get(''.join(link)).text
+        try:
+            data = requests.get(''.join(link)).text
+        except Exception:
+            raise Exception(message='\n'.join(['CorporateFiling::__GetDocumentLinks()','Could not grab data from link:', link]))
+
         soup = Soup(data, "lxml")
         link = ''
         filingTags = [tag for tag in soup.find_all('filing') if tag.find('datefiled') and tag.find('type') and unidecode(tag.find('type').text) == self.__type]
@@ -543,7 +551,10 @@ class CorporateFiling(object):
             link += 'l'
 
         # Pull approriate link to document from searched link:
-        soup = Soup(requests.get(link).text, 'lxml')
+        try:
+            soup = Soup(requests.get(link).text, 'lxml')
+        except Exception:
+            raise Exception(message='\n'.join(['Could not grab data from link:', link]))
         # Get filing date:
         self.__date = docFilingDate
         targetLinks = []
@@ -587,12 +598,33 @@ class CorporateFiling(object):
 
     def __CleanSoup(self, soup):
         """
-        * Unwrap all critical tags (font, rows, cells, tables) from 'div' tags.
+        * Unwrap all critical tags (font, rows, cells, tables) from 'div' tags, 
+        unwrap fonts from tables that have no header columns (i.e. are not really tables).
         """
         tags = soup.find_all('div')
         for tag in tags:
             tag.unwrap()
-
+        tables = soup.find_all('table')
+        headerMatch = re.compile('.+solid \#\d+.+')
+        footnoteMatch = re.compile('^(\(\d+\)|\*)[ ]?.+\.$', re.IGNORECASE) 
+        # Unwrap font from tables that do not have headers in them:
+        for table in tables:
+            skip = False
+            rows = table.find_all('tr')
+            for row in rows:
+                if row.find_all('td', {'style' : headerMatch}):
+                    skip = True
+                    break
+                elif footnoteMatch.match(unidecode(row.text).strip()):
+                    skip = True
+                    break
+            if not skip:
+                # Unwrap all font tags if not a table or footer table:
+                for cell in table.find_all('td'):
+                    cell.unwrap()
+                for row in table.find_all('tr'):
+                    row.unwrap()
+                table.unwrap()
     #################
     # Static Helpers:
     #################
@@ -643,6 +675,12 @@ class SubDocument(object):
         * Return { Period -> { LineItem -> Amount }} mapping.
         """
         return self.__financials
+    @property
+    def HasTables(self):
+        """
+        * Indicate that tables have been found in sub document.
+        """
+        return len(self.__tables.keys()) > 0
     @property 
     def Name(self):
         """
@@ -841,17 +879,15 @@ class TableItem(object):
     irregTables = []
     __reType = type(re.compile(''))
     __divHeaderMatch = re.compile('line-height:\d\d\d%;text-align:center;font-size:\d\dpt;')
-    #__divHeaderMatch = re.compile('.*padding-top:\d+px.*')
     __excludeChars = ''.join(list(set(string.punctuation + ' '))).replace('(', '').replace(')', '').replace('-', '')
     __excludeNames = { 'page' : True, 'table of contents' : True }
     __footerPattern = re.compile('__(_)+')
     __footerTextPattern = re.compile('(\([0-9]+\)|\*){1}')
     __headerMatch = re.compile('.*solid \#000000.*')
-    __monthMatch = re.compile('(Year Ended)? (Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|(Nov|Dec)(?:ember)?) [1-3]?[0-9]?', re.IGNORECASE)
-    __tableStripPattern = re.compile('item \d+\.', re.IGNORECASE)
+    __tableSubPattern = re.compile('(item \d+(\.[A-Z]?)|note)', re.IGNORECASE)
     __tableTitlePattern = re.compile('^font-family:inherit;font-size:\d+pt;font-weight:bold;$')
+    __titleStripChars = ''.join(list(set(string.punctuation + '= '))).replace('(', '').replace(')', '')
     __yearMatch = re.compile('(19|20)[0-9][0-9]')
-    __yearEndMatch = re.compile('')
     #####################
     # Constructors:
     #####################
@@ -873,9 +909,15 @@ class TableItem(object):
         tables exist, or None.
         """
         if not self.HasData:
-            return None
+            return []
         else:
-            return self.__data.dtype.names
+            return list(self.__data.dtype.names)
+    @property
+    def ColCount(self):
+        """
+        * Return number of columns in table.
+        """
+        return len(self.ColumnNames)
     @property
     def Data(self):
         """
@@ -894,11 +936,11 @@ class TableItem(object):
         * Is True if data has been loaded.
         """
         if isinstance(self.__data, list):
-            return len(self.__data) > 0 
+            return False 
         else:
             return self.__data.shape[0] > 0
     @property
-    def HasFootnotes(self):
+    def HasFootNotes(self):
         """
         * Is True if footnotes have been found for this table.
         """
@@ -909,6 +951,15 @@ class TableItem(object):
         * Title of table.
         """
         return self.__name
+    @property
+    def RowCount(self):
+        """
+        * Number of rows in table.
+        """
+        if self.HasData:
+            return self.__data.shape[0]
+        else:
+            return 0
     #####################
     # Interface Methods:
     #####################
@@ -973,25 +1024,35 @@ class TableItem(object):
         colNum = 0
         rows = table.find_all('tr')
         yearMatch = re.compile('(19|20)[0-9][0-9]')
-        prefixMatch = re.compile('(Year|Month|Quarter) Ended [A-Z]{3,9} [0-9]+,', re.IGNORECASE)
+        prefixMatch = re.compile('(((Year|Month|Quarter) Ended ){0,1}[A-Z]{3,9} [0-9]+,?|Fiscal)', re.IGNORECASE)
+        hasLettersMatch = re.compile('[A-Z]+', re.IGNORECASE)
         dateMatch = re.compile('[A-Z]{3,9} [0-9]+', re.IGNORECASE)
         boldFontMatch = re.compile('.*font-weight:bold.*')
-        strip = re.compile('(\(\d+\))')
-        swap = {'Year Ended' : 'YE', 'Month Ended' : 'ME', 'Quarter Ended' : 'QE'}
+        stripAll = re.compile('(\(\d+\)|\(in.+\))', re.IGNORECASE)
+        negMatch = re.compile('^\(\d+[,.]{0,1}\d?\)$')
+        zeroMatch = re.compile('^-+$')
+        hasDigitsMatch = re.compile('\d+')
+        swap = {'year ended' : 'YE', 'month ended' : 'ME', 'fiscal' : 'YE', 'quarter ended' : 'QE'}
         # Get column headers for table:
         headerRows = [] 
         dataRows = []
         columns = {}
         colNames = []
-        # Idea: Search for rows with tds having 'colspan' attribute to use as row values:
         prefix = []
+        # Determine which column header has maximum length:
+        maxLen = 0
+        boldRows = [row for row in rows if row.find('font', {'style': boldFontMatch})]
+        for row in boldRows:
+            tds = [td for td in row.find_all('td') if unidecode(td.text).strip(TableItem.__excludeChars).strip()]
+            if len(tds) > maxLen:
+                maxLen = len(tds)
         for row in rows:
             text = unidecode(row.text).strip()
             boldFont = row.find('font', {'style': boldFontMatch})
+            # Determine if need to include a 'prefix' (ex: "Year Ended December 31", appears in column header encircling multiple column headers):
             if not headerRows and text and boldFont:
-                prefixResult = prefixMatch.match(text)
-                if prefixResult and not prefix:
-                    text = text.strip()
+                if not prefix and prefixMatch.match(text):
+                    text = text.strip().lower()
                     prefKey = ''
                     for key in swap.keys():
                         if key in text:
@@ -999,8 +1060,10 @@ class TableItem(object):
                             break
                     if not prefKey:
                         prefKey = prefKey
-                    prefix = [prefKey, dateMatch.search(text)[0], ', ', '']
-                else:
+                    dateStr = dateMatch.search(text)[0] if dateMatch.search(text) else ''
+                    dateStr += ',' if dateStr and not dateStr.endswith(',') else ''
+                    prefix = [prefKey, dateStr.strip(), ' ', '']
+                elif len([td for td in row.find_all('td') if unidecode(td.text).strip(TableItem.__excludeChars).strip()]) == maxLen:
                     headerRows.append(row)
             elif text and headerRows:
                 dataRows.append(row)
@@ -1012,15 +1075,22 @@ class TableItem(object):
         cellCount = 0
         for cell in cells:
             text = unidecode(cell.text).strip(TableItem.__excludeChars)
-            text = strip.sub('', text).strip()
+            text = stripAll.sub('', text).strip()
             if not text and cellCount == 0:
                 columns['Line Item'] = []
             elif text:
                 if prefix and yearMatch.match(text):
-                    prefix[3] = text
-                    dateval = datetime.strptime(''.join([prefix[1], prefix[2], prefix[3]]), '%B %d, %Y')
-                    dateval = dateval.strftime('%m/%d/%Y')
-                    columns[''.join([prefix[0], dateval])] = []
+                    prefix[len(prefix) - 1] = text
+                    dateVal = ''
+                    if prefix[1]:
+                        try:
+                            dateVal = datetime.strptime(''.join([prefix[1], prefix[2], prefix[3]]), '%B %d, %Y')
+                            dateVal = dateVal.strftime('%m/%d/%Y')
+                        except:
+                            dateVal = ''
+                    else:
+                        dateVal = text
+                    columns[''.join([prefix[0], ' ', dateVal])] = []
                 else:
                     columns[text] = []
             cellCount += 1
@@ -1028,41 +1098,50 @@ class TableItem(object):
         # Exit if could not find column names:
         if not colNames:
             return
-        try:
-            # Pull in row data after getting column headers:
-            for row in dataRows:
-                cells = row.find_all('td')
-                currRowStrs = []
-                for cell in cells:
-                    text = unidecode(cell.text).strip(TableItem.__excludeChars)
-                    if text:
-                        currRowStrs.append(text)
-                if currRowStrs:
-                    # Append blank cell values if fewer cells than number of columns for current row
-                    # (ex: to accomodate 'Total' columns):
-                    while len(currRowStrs) < len(colNames):
-                        currRowStrs.append('')
-                    for colNum in range(0, len(colNames)):
-                        data = currRowStrs[colNum]
-                        columns[colNames[colNum]].append(data)
-
-            # Store table data in numpy array:
-            firstKey = list(columns.keys())[0]
-            numRows = len(columns[firstKey])
-            if numRows > 0:
-                # Load all table values:
-                values = n.array([n.asarray(columns[colName]) for colName in colNames])
-                types = [col.dtype for col in values]
-                dt = { 'names' : colNames, 'formats' : types }
-                self.__data = n.zeros(numRows, dtype = dt)
-                for col in range(0, len(colNames)):
-                    self.__data[colNames[col]] = values[col]
-        except:
-            TableItem.irregTables.append(table)
+        
+        # Pull in row data after getting column headers:
+        for row in dataRows:
+            cells = row.find_all('td')
+            currRowStrs = []
+            for col, cell in enumerate(cells):
+                text = unidecode(cell.text).strip()
+                text = text if not hasLettersMatch.search(text) else stripAll.sub('', text)
+                if text and hasDigitsMatch.search(text):
+                    # Check for orphan ')' in adjacent cells:
+                    if text.startswith('(') and not text.endswith(')') and col < len(cells) - 1 and unidecode(cells[col + 1].text).strip() == ')':
+                        text += ')'
+                    if negMatch.match(text):
+                        currRowStrs.append('-' + text.strip('()'))
+                    elif text.strip(TableItem.__excludeChars + ')'):
+                        currRowStrs.append(text.strip(TableItem.__excludeChars + ')'))
+                elif zeroMatch.match(text):
+                    # Convert "--" to 0:
+                    currRowStrs.append('0')
+                elif text.strip('()') and (hasLettersMatch.search(text) or hasDigitsMatch.search(text)):
+                    currRowStrs.append(text.strip())
+            if currRowStrs:
+                # Append blank cell values if fewer cells than number of columns for current row
+                # (ex: to accomodate 'Total' columns):
+                while len(currRowStrs) < len(colNames):
+                    currRowStrs.append('')
+                for colNum in range(0, len(colNames)):
+                    data = currRowStrs[colNum]
+                    columns[colNames[colNum]].append(data)
+        # Store table data in numpy array:
+        firstKey = list(columns.keys())[0]
+        numRows = len(columns[firstKey])
+        if numRows > 0:
+            # Load all table values:
+            values = n.array([n.asarray(columns[colName]) for colName in colNames])
+            types = [col.dtype for col in values]
+            dt = { 'names' : colNames, 'formats' : types }
+            self.__data = n.zeros(numRows, dtype = dt)
+            for col in range(0, len(colNames)):
+                self.__data[colNames[col]] = values[col]
 
     def __ExtractTableName(self, table, corpName):
         """
-        * Get the name of the table.
+        * Extract table title.
         """
         # Skip loading table if is table of contents (contains 'Items'):
         for row in table.find_all('tr'):
@@ -1077,29 +1156,38 @@ class TableItem(object):
         boldFontRE = re.compile('.*font-weight:bold.*')
         corpNameRE = re.compile(corpName, re.IGNORECASE) if corpName else None
         indexRE = re.compile('index', re.IGNORECASE)
+        italicFontRE = re.compile('.*font-style:italic.*')
         noteRE = re.compile('note \d+( |-)? ', re.IGNORECASE)
         unitRE = re.compile('\(in .+\)', re.IGNORECASE)
-        # Find the title of the table (assume that is first div tag with bold font text, that does not match with any above
+        # Find the title of the table
+        # (assume that is first div tag with bold/italic font text, that does not match with any above
         # regular expressions):
-        font = tag
-        while font and font.parent.name == 'text':
-            font = font.find_previous('font', {'style' : boldFontRE })
-            text = unidecode(font.text).strip() if font else ''
-            if font and text and not unitRE.match(text) and not (corpNameRE.match(text) if corpNameRE else True) and not indexRE.match(text):
-                break
+        font = tag.find_previous('font', {'style' : (boldFontRE, italicFontRE) })
+        while font:
+            # If landed in a table, climb out of table back to <text> tag:
+            if font.parent.name != 'text':
+                while font and font.parent and font.parent.name != 'text':
+                    font = font.parent
+                font = font.find_previous('font', {'style' : (boldFontRE, italicFontRE) })
+            else:
+                text = unidecode(font.text).strip() if font else ''
+                if font and font.name == 'font' and text and not unitRE.match(text) and not (corpNameRE.match(text) if corpNameRE else True) and not indexRE.match(text):
+                    break
+                font = font.find_previous('font', {'style' : (boldFontRE, italicFontRE) })
         if font:
-            if unidecode(font.text) == '(in millions)':
-                font = font
-                SoupTesting.PrintTagsHTML(font.find_previous('text'), 'D:\\Git Repos\\SeminarProject\\SeminarProject\\SeminarProject\\Notes\\IrregDocs\\' + self.Name + '_IrregDoc.html')
+            # We assume table titles have bold and/or italic font, and are contiguous if split over
+            # multiple <font> tags:
+            isBold = True if boldFontRE.search(font['style']) else False
+            isItalic = True if italicFontRE.search(font['style']) and not isBold else False
             tableName.append(unidecode(font.text).strip())
-            tableName = ''.join(tableName)
+            prevSib = font.previousSibling
+            while prevSib and prevSib.name == 'font' and hasattr(prevSib, 'style') and (boldFontRE.search(prevSib['style']) if isBold else italicFontRE.search(prevSib['style'])):
+                tableName.append(unidecode(prevSib.text).strip())
+                prevSib = prevSib.previousSibling
+            tableName = ' '.join(tableName)
             tableName = noteRE.sub('', tableName)
             
-            #while tag and boldFont.search(str(tag)) and tag.previousSibling and tag.previousSibling.name == 'div':
-            #    tableName.append(unidecode(tag.text).strip())
-                #tag = tag.find_previous('div' : { 'style' : '' })
-
-            self.__name = TableItem.__tableStripPattern.sub('', tableName)
+            self.__name = TableItem.__tableSubPattern.sub('', tableName).strip(TableItem.__titleStripChars)
         
     def __GetFootNotes(self, table, corpName):
         """
@@ -1127,6 +1215,182 @@ class TableItem(object):
                 break
 
 class SoupTesting(object):
+    @staticmethod
+    def TestTableName_New(table, corpName):
+        """
+        * Get the name of the table.
+        """
+        # Skip loading table if is table of contents (contains 'Items'):
+        for row in table.find_all('tr'):
+            text = unidecode(row.text).strip()
+            if text and re.search('item \d', text, re.IGNORECASE):
+                return
+        tableName = []
+        tag = table
+        # Get to outermost tag that is child to <text> tag (contains all information for <document>):
+        while tag and tag.parent.name != 'text':
+            tag = tag.parent
+        boldFontRE = re.compile('.*font-weight:bold.*')
+        corpNameRE = re.compile(corpName, re.IGNORECASE) if corpName else None
+        indexRE = re.compile('index', re.IGNORECASE)
+        italicFontRE = re.compile('.*font-style:italic.*')
+        noteRE = re.compile('note \d+( |-)? ', re.IGNORECASE)
+        unitRE = re.compile('\(in .+\)', re.IGNORECASE)
+        # Find the title of the table
+        # (assume that is first div tag with bold/italic font text, that does not match with any above
+        # regular expressions):
+        font = tag.find_previous('font', {'style' : (boldFontRE, italicFontRE) })
+        while font:
+            # If landed in a table, climb out of table back to <text> tag:
+            if font.parent.name != 'text':
+                while font and font.parent and font.parent.name != 'text':
+                    font = font.parent
+                font = font.find_previous('font', {'style' : (boldFontRE, italicFontRE) })
+            else:
+                text = unidecode(font.text).strip() if font else ''
+                if font and font.name == 'font' and text and not unitRE.match(text) and not (corpNameRE.match(text) if corpNameRE else True) and not indexRE.match(text):
+                    break
+                font = font.find_previous('font', {'style' : (boldFontRE, italicFontRE) })
+        if font:
+            # We assume table titles have bold and/or italic font, and are contiguous if split over
+            # multiple <font> tags:
+            isBold = True if boldFontRE.search(font['style']) else False
+            isItalic = True if italicFontRE.search(font['style']) and not isBold else False
+            tableName.append(unidecode(font.text).strip())
+            prevSib = font.previousSibling
+            while prevSib and prevSib.name == 'font' and hasattr(prevSib, 'style') and (boldFontRE.search(prevSib['style']) if isBold else italicFontRE.search(prevSib['style'])):
+                tableName.append(unidecode(prevSib.text).strip())
+                prevSib = prevSib.previousSibling
+            tableName = ' '.join(tableName)
+            tableName = noteRE.sub('', tableName)
+            
+            __name = TableItem.__tableSubPattern.sub('', tableName).strip(TableItem.__titleStripChars)
+
+    @staticmethod
+    def TestLoad_New(table):
+        """
+        * Test loading particular table.
+        """
+        colNum = 0
+        rows = table.find_all('tr')
+        excludeChars = ''.join(list(set(string.punctuation + ' '))).replace('(', '').replace(')', '').replace('-', '')
+        yearMatch = re.compile('(19|20)[0-9][0-9]')
+        prefixMatch = re.compile('(((Year|Month|Quarter) Ended ){0,1}[A-Z]{3,9} [0-9]+,?|Fiscal)', re.IGNORECASE)
+        hasLettersMatch = re.compile('[A-Z]+', re.IGNORECASE)
+        dateMatch = re.compile('[A-Z]{3,9} [0-9]+', re.IGNORECASE)
+        boldFontMatch = re.compile('.*font-weight:bold.*')
+        stripAll = re.compile('(\(\d+\)|\(in.+\))', re.IGNORECASE)
+        negMatch = re.compile('^\(\d+[,.]{0,1}\d?\)$')
+        zeroMatch = re.compile('^-+$')
+        hasDigitsMatch = re.compile('\d+')
+        swap = {'year ended' : 'YE', 'month ended' : 'ME', 'fiscal' : 'YE', 'quarter ended' : 'QE'}
+        # Get column headers for table:
+        headerRows = [] 
+        dataRows = []
+        columns = {}
+        colNames = []
+        prefix = []
+        # Determine which column header has maximum length:
+        maxLen = 0
+        boldRows = [row for row in rows if row.find('font', {'style': boldFontMatch})]
+        for row in boldRows:
+            tds = [td for td in row.find_all('td') if unidecode(td.text).strip(excludeChars).strip()]
+            if len(tds) > maxLen:
+                maxLen = len(tds)
+        for row in rows:
+            text = unidecode(row.text).strip()
+            boldFont = row.find('font', {'style': boldFontMatch})
+            # Determine if need to include a 'prefix' (ex: "Year Ended December 31", appears in column header encircling multiple column headers):
+            if not headerRows and text and boldFont:
+                if not prefix and prefixMatch.match(text):
+                    text = text.strip().lower()
+                    prefKey = ''
+                    for key in swap.keys():
+                        if key in text:
+                            prefKey = swap[key]
+                            break
+                    if not prefKey:
+                        prefKey = prefKey
+                    dateStr = dateMatch.search(text)[0] if dateMatch.search(text) else ''
+                    dateStr += ',' if dateStr and not dateStr.endswith(',') else ''
+                    prefix = [prefKey, dateStr.strip(), ' ', '']
+                elif len([td for td in row.find_all('td') if unidecode(td.text).strip(excludeChars).strip()]) == maxLen:
+                    headerRows.append(row)
+            elif text and headerRows:
+                dataRows.append(row)
+        # Exit data loading if no column headers were found:
+        if not headerRows or not dataRows:
+            return
+        # Get the column names:
+        cells = headerRows[0].find_all('td')
+        cellCount = 0
+        for cell in cells:
+            text = unidecode(cell.text).strip(excludeChars)
+            text = stripAll.sub('', text).strip()
+            if not text and cellCount == 0:
+                columns['Line Item'] = []
+            elif text:
+                if prefix and yearMatch.match(text):
+                    prefix[len(prefix) - 1] = text
+                    dateVal = ''
+                    if prefix[1]:
+                        try:
+                            dateVal = datetime.strptime(''.join([prefix[1], prefix[2], prefix[3]]), '%B %d, %Y')
+                            dateVal = dateVal.strftime('%m/%d/%Y')
+                        except:
+                            dateVal = ''
+                    else:
+                        dateVal = text
+                    columns[''.join([prefix[0], ' ', dateVal])] = []
+                else:
+                    columns[text] = []
+            cellCount += 1
+        colNames = list(columns.keys())
+        # Exit if could not find column names:
+        if not colNames:
+            return
+        
+        # Pull in row data after getting column headers:
+        for row in dataRows:
+            cells = row.find_all('td')
+            currRowStrs = []
+            for col, cell in enumerate(cells):
+                text = unidecode(cell.text).strip()
+                text = text if not hasLettersMatch.search(text) else stripAll.sub('', text)
+                if text and hasDigitsMatch.search(text):
+                    # Check for orphan ')' in adjacent cells:
+                    if text.startswith('(') and not text.endswith(')') and col < len(cells) - 1 and unidecode(cells[col + 1].text).strip() == ')':
+                        text += ')'
+                    if negMatch.match(text):
+                        currRowStrs.append('-' + text.strip('()'))
+                    elif text.strip(excludeChars + ')'):
+                        currRowStrs.append(text.strip(excludeChars + ')'))
+                elif zeroMatch.match(text):
+                    # Convert "--" to 0:
+                    currRowStrs.append('0')
+                elif text.strip('()') and (hasLettersMatch.search(text) or hasDigitsMatch.search(text)):
+                    currRowStrs.append(text.strip())
+            if currRowStrs:
+                # Append blank cell values if fewer cells than number of columns for current row
+                # (ex: to accomodate 'Total' columns):
+                while len(currRowStrs) < len(colNames):
+                    currRowStrs.append('')
+                for colNum in range(0, len(colNames)):
+                    data = currRowStrs[colNum]
+                    columns[colNames[colNum]].append(data)
+        # Store table data in numpy array:
+        firstKey = list(columns.keys())[0]
+        numRows = len(columns[firstKey])
+        if numRows > 0:
+            # Load all table values:
+            values = n.array([n.asarray(columns[colName]) for colName in colNames])
+            types = [col.dtype for col in values]
+            dt = { 'names' : colNames, 'formats' : types }
+            self.__data = n.zeros(numRows, dtype = dt)
+            for col in range(0, len(colNames)):
+                self.__data[colNames[col]] = values[col]
+
+
     @staticmethod
     def PrintTableHTML(tables, filePath):
         """
@@ -1181,7 +1445,7 @@ class SoupTesting(object):
         # Exit immediately if file already present:
         if not os.path.exists(folderPath):
             os.mkdir(folderPath)
-        path = ''.join([folderPath, doc.Ticker, '_TableNames.csv'])
+        path = ''.join([folderPath, doc.Ticker, '_TableAttributes.csv'])
         # Exit immediately if file already exists:
         if os.path.exists(path):
             return
@@ -1323,3 +1587,12 @@ class SoupTesting(object):
                     f.write(html[i])
                 except Exception:
                     pass
+
+class SECEdgarDistinctInfoQueries(object):
+    """
+    * Object loads information regarding exhibit information/descriptions
+    and other 
+    """
+    def __init__(self, db, targetSchema):
+        pass
+

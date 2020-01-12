@@ -2,7 +2,8 @@
 # DataBase.py
 #################################################
 # Description:
-# * 
+# * Object wraps functionality for mysql.connector
+# library, capable of performing all DML/DDL/DCL functionality. 
 
 import csv
 import re
@@ -189,9 +190,13 @@ class MYSQLDatabase(object):
     def ExecuteQuery(self, query, schema = None, getResults = False, shouldCommit = False):
         """
         * Execute query on passed table for given schema.
-        Input:
-        * schema: Expecting string naming existing schema in mysql instance.
+        Required Inputs:
         * query: Expecting string with query for schema.
+        Optional Inputs:
+        * schema: Expecting string naming existing schema in mysql instance.
+        * getResults: Put True if executing a SELECT statement, and expecting results.
+        * shouldCommit: Put True if executing INSERT/DELETE/UPDATE statement, and should
+        commit the changes to the database.
         """
         if not schema:
             schema = self.ActiveSchema
