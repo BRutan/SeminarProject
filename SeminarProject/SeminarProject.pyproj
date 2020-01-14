@@ -21,7 +21,7 @@
     <EnableUnmanagedDebugging>false</EnableUnmanagedDebugging>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="BrandQuery.py">
+    <Compile Include="TargetedWebScraping.py">
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="CorporateFiling.py">

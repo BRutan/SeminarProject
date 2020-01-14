@@ -28,6 +28,7 @@ class MYSQLDatabase(object):
     __selectStmtFilter = { 'inner' : 0, 'outer' : 0}
     __tableTokenStop = { 'group' : 0, 'having' : 0 }
     __stripPunct = ''.join(list(set(string.punctuation + ' ')))
+
     # TODO: Determine invalid characters in text strings: https://dev.mysql.com/doc/refman/8.0/en/string-literals.html
 
     #######################################
@@ -289,9 +290,12 @@ class MYSQLDatabase(object):
         # Get total number of rows (must be uniform for all columns):
         firstColName = list(columns.keys())[0]
         numRows = len(columns[firstColName])
+        for col in columns.keys():
+            if len(columns[col]) != numRows:
+                raise Exception('Number of rows must be uniform across all columns.')
         # Exit if no data was provided for columns:
-        if numRows == 9:
-            return
+        if numRows == 0:
+            return None
         colString = "(" + ','.join(list(columns.keys())) + ")"
         tableInsertQuery = ["INSERT INTO " , tableName,  " ", colString, " VALUES "]
         # Determine appropriate wrapping for data given column type:

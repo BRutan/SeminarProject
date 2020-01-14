@@ -1,9 +1,9 @@
 #################################################
 # SeminarProject.py
 #################################################
-# 
+# * Object performs key steps in seminar project.
 
-from BrandQuery import BrandQuery
+from TargetedWebScraping import BrandQuery, SubsidiaryQuery
 from CorporateFiling import CorporateFiling, TableItem, DocumentType, PullingSteps, SoupTesting
 import csv
 import DataBase
@@ -44,7 +44,7 @@ class SeminarProject(object):
         self.DataColumns = { "CorpID" : ["int", False, "Corporations(CorpID)"], "SearchTerm" : ["text", False, ""], 
                        "User" : ["text " + SeminarProject.__utfSupport, False, ''], "Date" : ["date", False, ""], 
                        "Tweet" : ["text " + SeminarProject.__utfSupport, False, ''] }
-        self.CorpToBrands = {}
+        self.TickerToBrands = {}
         self.__PulledBrands = {}
         
     #######################
@@ -56,7 +56,7 @@ class SeminarProject(object):
         """
         self.CreateTables()
         self.GetSubsidiaries()
-        self.LoadAllBrands()
+        self.GetBrands()
         self.SampleAndInsertTweets()
 
     def CreateTables(self):
@@ -119,7 +119,7 @@ class SeminarProject(object):
         #results = None
         self.TickerToSubs = {}
         # Determine if pulled some/all subsidiaries already:
-        if results and len(results[list(results.keys())[0]]) > 0:
+        if len(results['corporations.ticker']) > 0:
             tickers = results['corporations.ticker']
             subs = results['subsidiaries.subsidiaries']
             row = 0
@@ -134,6 +134,7 @@ class SeminarProject(object):
             subs = re.compile('subsidiaries', re.IGNORECASE)
             name = re.compile('name', re.IGNORECASE)
             steps = PullingSteps(False, True, False)
+            query = SubsidiaryQuery()
             # Testing:
             #tableDocPath = 'D:\\Git Repos\\SeminarProject\\SeminarProject\\SeminarProject\\Notes\\TableNames\\'
             for ticker in self.Tickers.keys():
@@ -148,6 +149,10 @@ class SeminarProject(object):
                     nameColumn = None
                     if table:
                         nameColumn = table.FindColumn(name, False)
+                    else:
+                        # Search google for subsidiaries:
+                        query.GetResults(self.Tickers[ticker][0])
+                        self.TickerToSubs[ticker] = query.Results
                     if not nameColumn is None:
                         self.TickerToSubs[ticker] = list(nameColumn)
                     # Add the corporation's name itself:
@@ -158,31 +163,38 @@ class SeminarProject(object):
                     db.InsertValues("Subsidiaries", insertData)
                     gc.collect()
                     
-    def LoadAllBrands(self):
+    def GetBrands(self):
         """
         * Pull all brands from WIPO website, push into database.
         """
         # Determine if brands were already loaded for each corporation:
         db = self.DB
-        results = db.ExecuteQuery('SELECT Ticker, Brands FROM Brands WHERE Brands IS NOT NULL;', getResults = True)
-        if results and len(results.keys()) == len(self.Tickers.keys()):
-            for row in results.keys():
-                ticker = results[row]['ticker']
-                brand = results[row]['brands']
-                self.CorpToBrands[ticker].append(brand)
-
-        
+        query = ['SELECT A.ticker, B.brands FROM corporations as A INNER JOIN corporatebrands as B']
+        query.append(' on A.corpid = B.corpid WHERE B.brands IS NOT NULL;')
+        query = ''.join(query)
+        results = db.ExecuteQuery(query, getResults = True)
+        if results and len(results['corporations.ticker']) > 0:
+            tickers = results['corporations.ticker']
+            brands = results['corporatebrands.brands']
+            row = 0
+            for ticker in tickers: 
+                if ticker not in self.TickerToBrands.keys():
+                    self.TickerToBrands[ticker] = []
+                self.TickerToBrands[ticker].append(brands[row])
+                row += 1
+                
         # Pull all brands from WIPO database website:
-        for ticker in self.Tickers.keys():
-            subsidiaries = self.Subsdiaries[ticker]
-            for sub in subsidiaries:
-                pass
-
-            # Push brands into the mysql database:
-            for brand in brands:
-                insertValues['ticker'].append(ticker)
-                insertValues['brand'].append(brand)
-            db.InsertValues(tableName, insertValues)
+        if len(self.TickerToBrands.keys()) < len(self.Tickers.keys()):
+            query = BrandQuery()
+            for ticker in self.Tickers.keys():
+                if ticker not in self.TickerToBrands.keys():
+                    insertValues = { 'corpid' : [], 'brand' : [] }
+                    subsidiaries = self.TickerToSubs[ticker]
+                    brands = query.PullBrands(subsidiaries)
+                    insertValues['corpid'] = [self.__TickerToCorpNum[ticker]] * len(brands[ticker])
+                    insertValues['brands'] = brands[ticker]
+                    # Push brands into the mysql database:
+                    db.InsertValues(tableName, insertValues)
 
     def SampleAndInsertTweets(self):
         """
@@ -190,10 +202,10 @@ class SeminarProject(object):
         """
         puller = TwitterPuller()
         for ticker in self.Tickers.keys():
-            for brand in self.CorpToBrands[ticker]:
+            for brand in self.TickerToBrands[ticker]:
                 self.__PullFromCache(ticker,brand)
 
-            for brand in self.CorpToBrands[ticker]:
+            for brand in self.TickerToBrands[ticker]:
                 if brand not in self.__PulledBrands[ticker]:
                     # Sample tweets that mention brand.
 

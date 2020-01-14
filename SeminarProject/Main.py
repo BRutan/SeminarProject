@@ -4,15 +4,10 @@
 # Description:
 # * Perform all key steps in the 
 
-from bs4 import BeautifulSoup as Soup
 import DataBase
-from BrandQuery import BrandQuery
-from PullTwitterData import TwitterPuller
-from CorporateFiling import CorporateFiling, DocumentType, PullingSteps, SoupTesting
 from SeminarProject import SeminarProject
     
 if __name__ == '__main__':
-
     #testPath = 'D:\\Git Repos\\SeminarProject\\SeminarProject\\SeminarProject\\Notes\\TableNames\\Company HTML Tables Raw\\AZO_RawHTML.html'
     #soup = Soup(open(testPath, 'w'), 'lxml')
     #tables = soup.find_all('table')

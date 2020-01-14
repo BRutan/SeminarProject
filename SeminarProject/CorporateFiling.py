@@ -474,18 +474,23 @@ class CorporateFiling(object):
         self.__subDocs = {}
         if links:
             # Testing:
-            rawTables = []
-            cleanTables = []
-            path = 'D:\\Git Repos\\SeminarProject\\SeminarProject\\SeminarProject\\Notes\\TableNames\\'
-            filePath = ''.join([path, self.Ticker, '_Tables.html'])
+            #rawTables = []
+            #cleanTables = []
+            #tenKPath = 'D:\\Git Repos\\SeminarProject\\SeminarProject\\SeminarProject\\Notes\\10Ks\\'
+            #path = 'D:\\Git Repos\\SeminarProject\\SeminarProject\\SeminarProject\\Notes\\TableNames\\'
+            #fileCount = 1
             for link in links:
                 soup = Soup(requests.get(link).text, 'lxml')
                 # Testing:
-                rawTables.extend(soup.find_all('table'))
+                #if self.Ticker in ['GM', 'CCL', 'DRI', 'NCLH', 'HRB', 'MCD', 'ROST', 'VFC', 'BBY', 'EXPE', 'LKQ', 'NWL', 'M', 'NKE', 'DG', 'GRMN', 'PVH', 'LB', 'SBUX', 'MAR', 'LEN', 'TIF', 'LEG', 'JWN', 'LOW', 'F', 'MGM', 'WYNN', 'PHM', 'HOG', 'GPS', 'ORLY', 'RCL', 'KMX', 'AAP', 'BWA', 'UAA', 'TJX', 'YUM', 'LVS', 'GPC', 'HAS', 'MHK', 'TGT', 'AZO', 'CMG', 'ULTA', 'TSCO', 'KSS', 'CPRI']:
+                #    docPath = ''.join([tenKPath, '\\', self.Ticker, '\\DocNum_', str(fileCount), '.html' ])
+                #    SoupTesting.WriteSoupToFile(soup, docPath, prettify = True)
+                #    fileCount += 1
+                #rawTables.extend(soup.find_all('table'))
                 self.__CleanSoup(soup)
-                cleanTables.extend(soup.find_all('table'))
-                SoupTesting.PrintTableHTML(tables = rawTables, filePath = ''.join([path, 'Company HTML Tables Raw\\', self.Ticker, '_RawHTML.html']))
-                SoupTesting.PrintTableHTML(tables = cleanTables, filePath = ''.join([path, 'Company HTML Tables Unwrapped\\', self.Ticker, '_UnwrappedHTML.html']))
+                #cleanTables.extend(soup.find_all('table'))
+                #SoupTesting.PrintTableHTML(tables = rawTables, filePath = ''.join([path, 'Company HTML Tables Raw\\', self.Ticker, '_RawHTML.html']))
+                #SoupTesting.PrintTableHTML(tables = cleanTables, filePath = ''.join([path, 'Company HTML Tables Unwrapped\\', self.Ticker, '_UnwrappedHTML.html']))
                 docs = soup.find_all('document')
                 for doc in docs:
                     subDoc = SubDocument(type, steps, doc, self.Ticker, self.CompanyName)
@@ -500,12 +505,10 @@ class CorporateFiling(object):
                 if subDoc.Name:
                     self.__subDocs[subDoc.Name] = subDoc
 
-        # Testing:
-        #SoupTesting.PrintTableAttributes(self, path)
-
         # Print all irregular tables:
+        # Testing:
         #if TableItem.irregTables:
-        #    fileName = ''.join([path, 'IrregTables_', self.Ticker, '.html'])
+        #    fileName = ''.join([path, '\\IrregTables\\IrregTables_', self.Ticker, '.html'])
         #    SoupTesting.PrintTableHTML(tables = TableItem.irregTables, filePath = fileName)
         #    TableItem.irregTables = []
 
@@ -1131,8 +1134,10 @@ class TableItem(object):
         firstKey = list(columns.keys())[0]
         numRows = len(columns[firstKey])
         if numRows > 0:
+            if self.__name == 'LIST OF SUBSIDIARIES':
+                self.__name == 'LIST OF SUBSIDIARIES'
             # Load all table values:
-            values = n.array([n.asarray(columns[colName]) for colName in colNames])
+            values = n.array([n.asarray([str(val) for val in columns[colName]]) for colName in colNames])
             types = [col.dtype for col in values]
             dt = { 'names' : colNames, 'formats' : types }
             self.__data = n.zeros(numRows, dtype = dt)
