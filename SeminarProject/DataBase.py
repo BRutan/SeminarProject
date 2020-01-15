@@ -28,9 +28,8 @@ class MYSQLDatabase(object):
     __selectStmtFilter = { 'inner' : 0, 'outer' : 0}
     __tableTokenStop = { 'group' : 0, 'having' : 0 }
     __stripPunct = ''.join(list(set(string.punctuation + ' ')))
-
-    # TODO: Determine invalid characters in text strings: https://dev.mysql.com/doc/refman/8.0/en/string-literals.html
-
+    __invalidCharsRE = re.compile('(\#|\(|\)|\*|\"|\')')
+    
     #######################################
     # Constructors/Destructors:
     #######################################
@@ -390,6 +389,20 @@ class MYSQLDatabase(object):
         * Return copy of schemas in the database (as list containing all schema names).
         """
         return list(self.__schemas.keys()).copy()
+
+    @staticmethod
+    def RemoveInvalidChars(elems):
+        """
+        * Strip all invalid characters before insertion into
+        database.
+        Inputs:
+        * elems: Can be string or list of strings.
+        """
+        if isinstance(elems, str):
+            return MYSQLDatabase.__invalidCharsRE.sub('', elems)
+        elif isinstance(elems, list):
+            return [MYSQLDatabase.__invalidCharsRE.sub('', elem) for elem in elems]
+
     #######################
     # Helper Functions:
     #######################

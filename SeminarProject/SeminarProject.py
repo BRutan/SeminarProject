@@ -6,7 +6,7 @@
 from TargetedWebScraping import BrandQuery, SubsidiaryQuery
 from CorporateFiling import CorporateFiling, TableItem, DocumentType, PullingSteps, SoupTesting
 import csv
-import DataBase
+from DataBase import MYSQLDatabase
 from datetime import datetime, timedelta
 import gc
 import memcache
@@ -39,7 +39,7 @@ class SeminarProject(object):
         self.__PullTickers(tickerPath)
         self.CorpTableColumns = {"CorpID" : ["int", True, ""], "Name" : ["text", False, ""], 
                                  "Ticker" : ["varchar(5)", False, ""], "Industry" : ["text", False, ""], "Weight" : ["float", False, ""] }
-        self.CorpBrandTableColumns = {"CorpID" : ["int", False, "Corporations(CorpID)"], "Brands" : ["text", False, ""]}
+        self.CorpBrandTableColumns = {"CorpID" : ["int", False, "Corporations(CorpID)"], "Brands" : ["text", False, ""], "AppDate" : ["Date", False, ""]}
         self.SubsidariesTableColumns = {"CorpID" : ["int", False, "Corporations(CorpID)"], "Subsidiaries" : ["text", False, ""]}
         self.DataColumns = { "CorpID" : ["int", False, "Corporations(CorpID)"], "SearchTerm" : ["text", False, ""], 
                        "User" : ["text " + SeminarProject.__utfSupport, False, ''], "Date" : ["date", False, ""], 
@@ -135,15 +135,10 @@ class SeminarProject(object):
             name = re.compile('name', re.IGNORECASE)
             steps = PullingSteps(False, True, False)
             query = SubsidiaryQuery()
-            # Testing:
-            #tableDocPath = 'D:\\Git Repos\\SeminarProject\\SeminarProject\\SeminarProject\\Notes\\TableNames\\'
             for ticker in self.Tickers.keys():
                 if ticker not in self.TickerToSubs.keys():
                     doc = CorporateFiling(ticker, DocumentType.TENK, steps, date = yearEnd)
                     insertData = {'CorpID' : [], 'Subsidiaries' : []}
-                    # Testing:
-                    #doc.PrintTables(tableDocPath)
-                    #SoupTesting.PrintTableAttributes(doc, tableDocPath)
                     self.TickerToSubs[ticker] = []
                     tableDoc, table = doc.FindTable(subs, False)
                     nameColumn = None
@@ -159,7 +154,7 @@ class SeminarProject(object):
                     self.TickerToSubs[ticker].append(self.Tickers[ticker][0])
                     # Insert data into Subsidiaries table:
                     insertData['CorpID'] = [self.__TickerToCorpNum[ticker]] * len(self.TickerToSubs[ticker])
-                    insertData['Subsidiaries'] = self.TickerToSubs[ticker]
+                    insertData['Subsidiaries'] = MYSQLDatabase.RemoveInvalidChars(self.TickerToSubs[ticker])
                     db.InsertValues("Subsidiaries", insertData)
                     gc.collect()
                     
@@ -188,11 +183,12 @@ class SeminarProject(object):
             query = BrandQuery()
             for ticker in self.Tickers.keys():
                 if ticker not in self.TickerToBrands.keys():
-                    insertValues = { 'corpid' : [], 'brand' : [] }
+                    insertValues = { }
                     subsidiaries = self.TickerToSubs[ticker]
                     brands = query.PullBrands(subsidiaries)
-                    insertValues['corpid'] = [self.__TickerToCorpNum[ticker]] * len(brands[ticker])
-                    insertValues['brands'] = brands[ticker]
+                    insertValues['corpid'] = [self.__TickerToCorpNum[ticker]] * len(brands.keys())
+                    insertValues['brands'] = MYSQLDatabase.RemoveInvalidChars(list(brands.keys()))
+                    insertValues['appdate'] = [brands[key] for key in list(brands.keys())]
                     # Push brands into the mysql database:
                     db.InsertValues(tableName, insertValues)
 
