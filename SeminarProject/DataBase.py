@@ -402,6 +402,8 @@ class MYSQLDatabase(object):
             return MYSQLDatabase.__invalidCharsRE.sub('', elems)
         elif isinstance(elems, list):
             return [MYSQLDatabase.__invalidCharsRE.sub('', elem) for elem in elems]
+        else:
+            raise Exception('elems must be string or list of strings.')
 
     #######################
     # Helper Functions:

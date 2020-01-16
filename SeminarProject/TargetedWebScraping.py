@@ -6,6 +6,7 @@
 # subsidiaries from google search.
 
 from bs4 import BeautifulSoup as Soup
+import csv
 import pyautogui
 import random
 import re
@@ -23,36 +24,31 @@ class BrandQuery(object):
     """
     * Pull brands from brand database.
     """
+    __htmlFilePath = 'WebElements.html'
     __site = 'https://www3.wipo.int/branddb/en/'
     __chromePath = 'C:\\Program Files (x86)\\Google\\Chrome\\ChromeDriver\\chromedriver.exe'
+    __firefoxPath = 'C:\\Program Files\\Mozilla Firefox\\firefox.exe'
     __inputBoxPath = '/html/body/div[4]/div[2]/form/div[1]/div/div[1]/div[1]/div[1]/div[3]/div[2]/div[1]/div[3]/input'
-    __executeButtonPath = '/html/body/div[4]/div[2]/form/div[1]/div/div[1]/div[1]/div[1]/div[3]/div[3]/a/span[1]'
     __namePanePath = '/html/body/div[4]/div[2]/form/div[1]/div/div[1]/div[1]/div[1]/div[1]/div[2]/div[3]/ul/li[2]/a'
-    __nextPageButton = '/html/body/div[4]/div[2]/form/div[3]/div[1]/div[2]/div[3]/a[1]/span[1]'
-    __pageNumBoxPath = '/html/body/div[4]/div[2]/form/div[3]/div[1]/div[2]/div[3]/div/input'
     __tablePath = '/html/body/div[4]/div[2]/form/div[3]/div[2]/div/div[3]/div[3]/div/table'
     __restartEndCount = 10
     def __init__(self):
         """
-        * Create new BrandQuery object, begin importing immediately.
-        Inputs:
-        * companies: Expecting dictionary mapping { Company -> [Subsidiaries] }.
+        * Create new BrandQuery object with browser window at WIPO website.
         """
-        # Open browser window until object is terminated:
-        self.__driver = webdriver.Chrome(executable_path=BrandQuery.__chromePath) 
-        self.__driver.get(BrandQuery.__site)
-        time.sleep(2)
-        namePane = self.__driver.find_element_by_xpath(BrandQuery.__namePanePath)
-        namePane.click()
-        self.__inputBox = self.__driver.find_element_by_xpath(BrandQuery.__inputBoxPath)
-        pyautogui.FAILSAFE = False
-        
+        self.__driver = None
+        self.__nextPageButton = None 
+        self.__namePane = None
+        self.__inputBox = None 
+        self.__pageNumBox = None 
+        self.__resultsTable = None
+        self.__StartBrowser()
+
     def __del__(self):
         """
         * Close existing browser.
         """
-        if not self.__driver is None:
-            self.__driver.close()
+        self.__EndSession()
         
     def PullBrands(self, subsidiaries):
         """
@@ -64,25 +60,34 @@ class BrandQuery(object):
         if not isinstance(subsidiaries, list):
             raise Exception('subsidiaries needs to be a list.')
 
+        if not self.__driver:
+            self.__StartBrowser()
+
         brands = {}
         subDict = {}
         for sub in subsidiaries:
             # Standardize by removing punctuation from subsidiary name, lower-case:
             subDict[re.sub('[^\w\s]', '', sub.lower())] = True
 
-        subs = ','.join(list(subDict.keys()))
+        #subs = [sub for index, sub in enumerate(subDict.keys()) if index < 20]
+        #subs = ', '.join(subs)
+        subs = ', '.join(list(subDict.keys()))
         self.__inputBox.send_keys(subs)
         self.__inputBox.send_keys(Keys.RETURN)
         self.__resultsTable = self.__driver.find_element_by_xpath('//*[@id="results"]')
-        soup = Soup(self.__driver.page_source, 'lxml')
+        #soup = Soup(self.__driver.page_source, 'lxml')
         # Extract all rows from the grid:
-        numPages = unidecode(soup.find('div', {'class' : 'skipWindow'}).text)
-        numPages = int(re.search('[0-9]+(,[0-9]+){0,1}', numPages)[0].replace(',',''))
+        time.sleep(3)
+        numPages = self.__driver.find_element_by_xpath('//div[@class="skipWindow"]').text
+        #defaultTextNum = '1,351,237'
+        #numPages = unidecode(soup.find('div', {'class' : 'skipWindow'}).text)
+        numPages = int(re.search('[0-9]+(,[0-9]+){0,1}', unidecode(numPages))[0].replace(',',''))
         pageNum = 1
         restartCount = 0
         while pageNum < numPages + 1:
-            if pageNum % 20 == 0:
-                BrandQuery.__MoveMouse()
+            # Testing:
+            #if pageNum % 20 == 0:
+                #BrandQuery.__MoveMouse()
             try:
                 soup = Soup(self.__driver.page_source, 'lxml')    
                 table = soup.find('div', {'id' : 'results'})
@@ -94,23 +99,51 @@ class BrandQuery(object):
                         if holder:
                             holderName = re.sub('[^\w\s]', '', unidecode(holder.text).strip().lower())
                             if holderName in subDict.keys():
-                                brand = unidecode(row.find('td', { 'aria-describedby' : 'gridForsearch_pane_BRAND'}).text).strip()
+                                brand = row.find('td', { 'aria-describedby' : 'gridForsearch_pane_BRAND'}).text.strip()
                                 if brand not in brands.keys():
-                                    brands[brand] = unidecode(row.find('td', {'aria-describedby' : 'gridForsearch_pane_AD'}).text).strip()
+                                    # Store date filed, holder:
+                                    brands[brand] = (unidecode(row.find('td', {'aria-describedby' : 'gridForsearch_pane_AD'}).text).strip(), holderName)
                 # Move to the next page:
-                nextPageButton = WebDriverWait(self.__resultsTable, 10).until(EC.element_to_be_clickable((By.XPATH, '//*[@aria-label="next page"]')))
-                nextPageButton.click()
+                self.__nextPageButton = WebDriverWait(self.__resultsTable, 10).until(EC.element_to_be_clickable((By.XPATH, '//*[@aria-label="next page"]')))
+                self.__nextPageButton.click()
                 pageNum += 1
-            except:
-                restartCount += 1
-                if restartCount >= BrandQuery.__restartEndCount:
+                # Exit if pulled over 1000 brands:
+                if len(brands.keys()) > 1000:
                     return brands
-                self.__RestartQuery(subs, pageNum)
+            except:
+                # Testing:
+                #self.__PrintAttributes(self.__WebElements)
+                self.__EndSession()
+                return brands
+                #restartCount += 1
+                #if len(brands.keys()) > 1000 or restartCount >= BrandQuery.__restartEndCount:
+                #    self.__EndSession()
+                #    return brands
+                #self.__StartBrowser(restartCount, pageNum, subs)
         return brands
 
     ####################
     # Helpers:
     ####################
+    @property
+    def __WebElements(self):
+        """
+        * Return all web elements used in query.
+        """
+        return 	{"NextPage" : self.__nextPageButton, "Name Pane" : self.__namePane, "Input Box" : self.__inputBox, "PageNum Box" : self.__pageNumBox, "Result Table" : self.__resultsTable }
+
+    def __PrintAttributes(self, elems):
+        """
+        * Print HTML attributes for WebElements that cause automation to fail.
+        """
+        with open(BrandQuery.__htmlFilePath, 'w+') as f:
+            for key in elems:
+                if elems[key] is None:
+                    continue
+                html = Soup(elems[key].get_attribute('outerHTML'), 'lxml').prettify() 
+                for i in range(0, len(html)):
+                    f.write(html[i])
+
     @staticmethod
     def __MoveMouse():
         """
@@ -118,22 +151,52 @@ class BrandQuery(object):
         """
         pyautogui.moveTo(random.uniform(0, pyautogui.size()[0]), random.uniform(0, pyautogui.size()[1]), duration = 1)
 
-    def __RestartQuery(self, searchTerm, pageNum):
+    def __EndSession(self):
         """
-        * Open new instance at page if kicked off.
+        * Close window and release memory.
         """
-        self.__driver.close()
-        self.__driver = webdriver.Chrome(executable_path=BrandQuery.__chromePath) 
-        self.__driver.get(BrandQuery.__site)
-        time.sleep(3)
-        namePane = self.__driver.find_element_by_xpath(BrandQuery.__namePanePath)
-        namePane.click()
-        self.__inputBox = self.__driver.find_element_by_xpath(BrandQuery.__inputBoxPath)
-        pageNumBox = WebDriverWait(self.__resultsTable, 10).until(EC.element_to_be_clickable((By.XPATH, '//*[@id="skipValue1"]')))
-        pageNumBox.clear()
-        pageNumBox.send_keys(str(pageNum))
-        pageNumBox.send_keys(Keys.RETURN)
+        if not self.__driver is None:
+            self.__driver.quit()
+            self.__driver = None
 
+    def __StartBrowser(self, restartCount = None, pageNum = None, searchTerm = None):
+        """
+        * Open browser window until object is terminated.
+        """
+        if self.__driver:
+            self.__EndSession()
+        #if not restartCount or (restartCount and restartCount % 2 == 1):f
+        #    self.__driver = webdriver.Chrome(executable_path=BrandQuery.__chromePath) 
+        #elif restartCount % 2 == 0:
+        #    self.__driver = webdriver.FireFox(executable_path=BrandQuery.__firefoxPath)
+        self.__driver = webdriver.Chrome(executable_path=BrandQuery.__chromePath)
+        # Open random number of tabs:
+        #numPages = int(random.uniform(1, 30))
+        #for val in range(0, numPages):
+        #    self.__driver.execute_script("window.open('https://www.google.com');")
+        #self.__driver.execute_script(''.join(["window.open('", BrandQuery.__site, "');"]))
+        self.__driver.get(BrandQuery.__site)
+        try:
+            time.sleep(3)
+            #time.sleep(random.uniform(0, 4))
+            self.__namePane = self.__driver.find_element_by_xpath(BrandQuery.__namePanePath)
+            self.__namePane.click()
+            self.__inputBox = self.__driver.find_element_by_xpath(BrandQuery.__inputBoxPath)
+            if pageNum and searchTerm:
+                self.__pageNumBox = WebDriverWait(self.__resultsTable, 10).until(EC.element_to_be_clickable((By.XPATH, '//*[@id="skipValue1"]')))
+                self.__pageNumBox.clear()
+                self.__pageNumBox.send_keys(str(pageNum))
+                self.__pageNumBox.send_keys(Keys.RETURN)
+                self.__inputBox.send_keys(searchTerm)
+                self.__inputBox.send_keys(Keys.RETURN)
+                self.__resultsTable = self.__driver.find_element_by_xpath('//*[@id="results"]')
+        except:
+            # Testing:
+            #self.__PrintAttributes(self.__WebElements)
+            self.__EndSession()
+            raise Exception('WIPO website has kicked you off for detecting automation. Try again later.')
+
+        pyautogui.FAILSAFE = False
 
 class SubsidiaryQuery(object):
     """

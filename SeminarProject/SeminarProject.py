@@ -39,7 +39,7 @@ class SeminarProject(object):
         self.__PullTickers(tickerPath)
         self.CorpTableColumns = {"CorpID" : ["int", True, ""], "Name" : ["text", False, ""], 
                                  "Ticker" : ["varchar(5)", False, ""], "Industry" : ["text", False, ""], "Weight" : ["float", False, ""] }
-        self.CorpBrandTableColumns = {"CorpID" : ["int", False, "Corporations(CorpID)"], "Brands" : ["text", False, ""], "AppDate" : ["Date", False, ""]}
+        self.CorpBrandTableColumns = {"CorpID" : ["int", False, "Corporations(CorpID)"], "Brands" : ["text " + SeminarProject.__utfSupport, False, ""], "AppDate" : ["Date", False, ""]}
         self.SubsidariesTableColumns = {"CorpID" : ["int", False, "Corporations(CorpID)"], "Subsidiaries" : ["text", False, ""]}
         self.DataColumns = { "CorpID" : ["int", False, "Corporations(CorpID)"], "SearchTerm" : ["text", False, ""], 
                        "User" : ["text " + SeminarProject.__utfSupport, False, ''], "Date" : ["date", False, ""], 
@@ -57,7 +57,7 @@ class SeminarProject(object):
         self.CreateTables()
         self.GetSubsidiaries()
         self.GetBrands()
-        self.SampleAndInsertTweets()
+        self.GetTweets()
 
     def CreateTables(self):
         """
@@ -164,90 +164,57 @@ class SeminarProject(object):
         """
         # Determine if brands were already loaded for each corporation:
         db = self.DB
-        query = ['SELECT A.ticker, B.brands FROM corporations as A INNER JOIN corporatebrands as B']
+        query = ['SELECT A.ticker, B.brands, B.appdate, B.holder FROM corporations as A INNER JOIN corporatebrands as B']
         query.append(' on A.corpid = B.corpid WHERE B.brands IS NOT NULL;')
         query = ''.join(query)
         results = db.ExecuteQuery(query, getResults = True)
         if results and len(results['corporations.ticker']) > 0:
             tickers = results['corporations.ticker']
             brands = results['corporatebrands.brands']
+            appdates = results['corporatebrands.appdate']
+            holders = results['corporatebrands.holder']
             row = 0
             for ticker in tickers: 
                 if ticker not in self.TickerToBrands.keys():
                     self.TickerToBrands[ticker] = []
-                self.TickerToBrands[ticker].append(brands[row])
+                self.TickerToBrands[ticker].append((brands[row], appdates[row], holders[row]))
                 row += 1
                 
         # Pull all brands from WIPO database website:
         if len(self.TickerToBrands.keys()) < len(self.Tickers.keys()):
+            # Testing:
+            return
             query = BrandQuery()
             for ticker in self.Tickers.keys():
                 if ticker not in self.TickerToBrands.keys():
-                    insertValues = { }
+                    insertValues = {}
                     subsidiaries = self.TickerToSubs[ticker]
                     brands = query.PullBrands(subsidiaries)
                     insertValues['corpid'] = [self.__TickerToCorpNum[ticker]] * len(brands.keys())
                     insertValues['brands'] = MYSQLDatabase.RemoveInvalidChars(list(brands.keys()))
-                    insertValues['appdate'] = [brands[key] for key in list(brands.keys())]
+                    insertValues['appdate'] = MYSQLDatabase.RemoveInvalidChars([brands[key][0] for key in list(brands.keys())])
+                    insertValues['holder'] = MYSQLDatabase.RemoveInvalidChars([brands[key][1] for key in list(brands.keys())])
                     # Push brands into the mysql database:
-                    db.InsertValues(tableName, insertValues)
+                    db.InsertValues("corporatebrands", insertValues)
 
-    def SampleAndInsertTweets(self):
+    def GetTweets(self):
         """
         * Randomly sample all tweets and insert into associated table in schema.
         """
         puller = TwitterPuller()
         for ticker in self.Tickers.keys():
-            for brand in self.TickerToBrands[ticker]:
-                self.__PullFromCache(ticker,brand)
-
+            insertValues = {}
             for brand in self.TickerToBrands[ticker]:
                 if brand not in self.__PulledBrands[ticker]:
                     # Sample tweets that mention brand.
-
                     samples = choose(100, 45, replace=False)
                     tweets = puller.PullTweets('', 100, brand)
                     tweets = [tweets[i] for i in samples]
-                    self.__InsertTweetsIntoTable(ticker, tweets)
-                    # Indicate that have already pulled brand tweets for company:
-                    self.__InsertIntoCache(ticker, brand)
                     
-                
         
     ########################
     # Private Helpers:
     ########################
-    def __InsertTweetsIntoTable(self, keyword, ticker, tweets):
-        """
-        * Insert tweets for particular ticker into table.
-        """
-        db = self.DB
-        # Get matching twitter name:
-        tableName = [table for table in db.Tables.keys() if ticker.lower() in table][0]
-        columns = db.Tables[tableName]
-        columnData = {}
-        # Get corporate id for ticker:
-        corpID = db.ExecuteQuery("SELECT CorpID FROM Corporations WHERE Ticker = %s" % ticker)
-
-        for column in columns.keys():
-            columnData[column] = []
-
-        for tweet in tweets:
-            for column in columns.keys():
-                if column == 'CorpID':
-                    columnData[column].append(corpID)
-                elif column == 'User':
-                    columnData[column].append(tweet.username)
-                elif column == 'SearchTerm':
-                    columnData[column].append(keyword)
-                elif column == 'Date':
-                    columnData[column].append(tweet.date)
-                elif column == 'Tweet':
-                    columnData[column].append(tweet.text)
-
-        # Push all data into the database:
-        db.InsertValues(tableName, "Research_Seminar_Project", columnData)
-
     def __PullTickers(self, tickerPath):
         """
         * Pull in all consumer discretionary tickers and other attributes from local file.
@@ -287,7 +254,9 @@ class SeminarProject(object):
                 atHeader = False
 
         self.Tickers = tickers
-
+    #######################
+    # Deprecated:
+    #######################
     def __InsertIntoCache(self, ticker, brand):
         """
         * Store information regarding pulled brands for corps in local cache
