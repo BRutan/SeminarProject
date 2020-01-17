@@ -77,17 +77,9 @@ class BrandQuery(object):
         self.__inputBox.send_keys(subs)
         self.__inputBox.send_keys(Keys.RETURN)
         self.__resultsTable = self.__driver.find_element_by_xpath('//*[@id="results"]')
-        #soup = Soup(self.__driver.page_source, 'lxml')
-        # Extract all rows from the grid:
-        time.sleep(3)
-        numPages = self.__driver.find_element_by_xpath('//div[@class="skipWindow"]').text
-        numPages = int(re.search('[0-9]+(,[0-9]+){0,1}', unidecode(numPages))[0].replace(',',''))
+        # Extract all rows from grid:
         pageNum = 1
-        restartCount = 0
-        while pageNum < numPages + 1:
-            # Testing:
-            #if pageNum % 20 == 0:
-                #BrandQuery.__MoveMouse()
+        while pageNum < 1000:
             try:
                 soup = Soup(self.__driver.page_source, 'lxml')    
                 table = soup.find('div', {'id' : 'results'})
@@ -107,19 +99,15 @@ class BrandQuery(object):
                 self.__nextPageButton = WebDriverWait(self.__resultsTable, 10).until(EC.element_to_be_clickable((By.XPATH, '//*[@aria-label="next page"]')))
                 self.__nextPageButton.click()
                 pageNum += 1
-                # Exit if pulled over 1000 brands or passed through large number of pages:
-                if len(brands.keys()) > 300 or pageNum > 500:
+                # Exit if pulled over certain number of brands or passed through large number of pages:
+                if len(brands.keys()) > 400 or pageNum > 500:
                     return brands
             except:
                 # Testing:
                 #self.__PrintAttributes(self.__WebElements)
                 self.__EndSession()
                 return brands
-                #restartCount += 1
-                #if len(brands.keys()) > 1000 or restartCount >= BrandQuery.__restartEndCount:
-                #    self.__EndSession()
-                #    return brands
-                #self.__StartBrowser(restartCount, pageNum, subs)
+                
         return brands
 
     ####################

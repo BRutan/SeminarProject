@@ -13,7 +13,7 @@ import gc
 import memcache
 from pandas.tseries import offsets
 import re
-#from PullTwitterData import TwitterPuller
+from PullTwitterData import TwitterPuller
 
 # Initiate cache to store brands that were searched:
 cache = memcache.Client(['127.0.0.1:11211'], debug=0)
@@ -146,7 +146,7 @@ class SeminarProject(object):
             maxSubNum = max(subNums) + 1
         if len(self.TickerToSubs.keys()) < len(self.Tickers.keys()):
             # Testing:
-            return
+            #return
             # Pull some subsidiaries from 10-Ks, if haven't been pulled in yet:
             yearEnd = datetime.today() + offsets.YearEnd()
             subs = re.compile('subsidiaries', re.IGNORECASE)
@@ -208,7 +208,7 @@ class SeminarProject(object):
         # Pull all brands from WIPO database website:
         if len(self.TickerToBrands.keys()) < len(self.Tickers.keys()):
             # Testing:
-            return
+            #return
             query = BrandQuery()
             for ticker in self.Tickers.keys():
                 if ticker not in self.TickerToBrands.keys():
@@ -220,18 +220,24 @@ class SeminarProject(object):
                     insertValues['appdate'] = MYSQLDatabase.RemoveInvalidChars([re.sub('[^0-9\-]','',brands[key][0]) for key in list(brands.keys())])
                     insertValues['subnum'] = [self.TickerToSubs[ticker][brands[key][1]] for key in brands.keys()]
                     # Push brands into the mysql database:
-                    db.InsertInChunks("corporatebrands", insertValues, 50, skipExceptions=True)
+                    db.InsertInChunks("corporatebrands", insertValues, 50)
                     gc.collect()
 
     def GetTweets(self):
         """
         * Randomly sample all tweets and insert into associated table in schema.
         """
+        # Testing:
+        #for ticker in self.TickerToSubs.keys():
+        #    if ticker in self.TickerToBrands.keys():
+        #        test = TwitterPuller([val[0] for val in self.TickerToBrands[ticker]])
+        #        results = test.PullTweets(self.StartDate, 100)
         # Determine which companies have already been sampled:
+        return
         query = ['SELECT COUNT(*) AS Count FROM ', '', ';']
         db = self.DB
         pulledTickers = {}
-        for ticker in self.TickerToTable:
+        for ticker in self.TickerToTable.keys():
             query[1] = self.TickerToTable[ticker]
             results = db.ExecuteQuery(''.join(query), getResults = True)
             if results and results['count'][0] > 0:
@@ -241,7 +247,7 @@ class SeminarProject(object):
         args['since'] = self.StartDate
         args['until'] = self.EndDate
         args['interDaySampleSize'] = 100
-        #args['termSampleSize'] = 100
+        args['termSampleSize'] = 100
         insertValues = {}
         puller = TweetPuller()
         # Pull tweets for all corporations that haven't been sampled already:
@@ -264,6 +270,8 @@ class SeminarProject(object):
                 args['subs'] = [val[2] for val in vals]
                 # Randomly sample tweets based upon args:
                 results = puller.PullTweets(args)
+                #puller = TwitterPuller(args['searchTerms'])
+                #results = puller.PullTweets(self.StartDate, self.EndDate, args['subs'])
                 for term in results.keys():
                     if len(results[term]) > 0:
                         for tweet in results[term]:
@@ -271,9 +279,9 @@ class SeminarProject(object):
                             insertValues['Term'].append(term)
                             insertValues['User'].append(tweet.Username)
                             insertValues['Date'].append(tweet.Date)
-                            insertValues['Tweet'].append(tweet.Text)
-                            insertValues['SubNum'].append(self.TTickerToSubs[ticker][tweet.Subsidiary])
-                        db.InsertValues(table, insertValues)
+                            insertValues['Tweet'].append(MYSQLDatabase.RemoveInvalidChars(tweet.Text))
+                            insertValues['SubNum'].append(self.TickerToSubs[ticker][tweet.Subsidiary])
+                        db.InsertInChunks(table, insertValues, 50)
         
     def GetHistoricalData(self):
         """

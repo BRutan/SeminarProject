@@ -5,6 +5,7 @@
 # * Pull data from twitter.
 
 import got3 as got
+from datetime import datetime, date
 
 class TwitterPuller(object):
     """
@@ -19,38 +20,43 @@ class TwitterPuller(object):
         Parameters:
         * keywords: Expecting list of all keywords.
         """
-        self.__keywords = []
+        if keywords and not isinstance(keywords, list):
+            raise Exception('keywords must be None or a list.')
         # Remove all non-unicode characters and blanks in each keyword:
         if keywords:
-            for word in keywords:
-                self.__keywords.append(uniWord)
-    
+            self.__keywords = [keyword.strip() for keyword in keywords if keyword.strip()]
+        else:
+            self.__keywords = []
     ###############################
     # Public Functions:
     ###############################
     # tweetCriteria = got.manager.TweetCriteria().setQuerySearch('test').setMaxTweets(5)
     # ['author_id', 'date', 'favorites', 'formatted_date', 'geo', 'hashtags', 'id', 'mentions', 'permalink', 'retweets', 'text', 'urls', 'username']
-    def PullTweets(self, startDate, numTweets, keyword = None):
+    def StepAndSampleTweets(self, args, dayStepSize = 1, numTweets = 3000):
+        """
+        * Step through dates and sample using provided arguments.
+        """
+        pass
+    
+    def PullTweets(self, startDate, endDate, subs, numTweets = 3000):
         """
         * Pull all tweets using stored keywords object.
-        Documentation: https://python-twitter.readthedocs.io/en/latest/twitter.html#twitter.models.Status
         """
+        startDate = startDate.strftime('%Y-%m-%d')
+        endDate = endDate.strftime('%Y-%m-%d')
         results = {}
         tweetCriteria = got.manager.TweetCriteria()
         tweetCriteria = tweetCriteria.setSince(startDate)
+        tweetCriteria = tweetCriteria.setUntil(endDate)
         tweetCriteria = tweetCriteria.setMaxTweets(numTweets)
-        if not keyword:
-            for keyword in self.__keywords:
-                if keyword:
-                    try:
-                        tweetCriteria = tweetCriteria.setQuerySearch(keyword)
-                        results[keyword] = got.manager.TweetManager.getTweets(tweetCriteria)
-                    except Exception as ex:
-                        continue
-        else:
-            tweetCriteria = tweetCriteria.setQuerySearch(keyword)
-            results = got.manager.TweetManager.getTweets(tweetCriteria)
-                    
+        for num, keyword in enumerate(self.__keywords):
+            try:
+                tweetCriteria = tweetCriteria.setQuerySearch(keyword)
+                tweets = got.manager.TweetManager.getTweets(tweetCriteria)
+                results[keyword] = tweets
+                #results[keyword] = [(, subs[num])
+            except Exception as ex:
+                continue
         # Return dictionary containing keywords mapped to list of status objects or list:
         return results
 
@@ -61,6 +67,9 @@ class TwitterPuller(object):
         # Return string containing only unicode characters:
         return ''.join([i if ord(i) < 128 else '' for i in string])
 
+    ###################
+    # Deprecated:
+    ###################
     def __temp(self):
         """
         * Store info regarding memcached.
@@ -68,6 +77,9 @@ class TwitterPuller(object):
         pulled_corp_searches = mc.get("corp_searches")
         if not pulled_corp_searches:
             pulled_corp_searches = {}
+
+
+
     
 class DecomposedStatuses(object):
     """
