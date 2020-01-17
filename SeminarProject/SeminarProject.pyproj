@@ -21,6 +21,12 @@
     <EnableUnmanagedDebugging>false</EnableUnmanagedDebugging>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="GetTweets.py">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="HistoricalReturnsPuller.py">
+      <SubType>Code</SubType>
+    </Compile>
     <Compile Include="TargetedWebScraping.py">
       <SubType>Code</SubType>
     </Compile>
@@ -37,6 +43,7 @@
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="SentimentAnalyzer.py" />
+    <Compile Include="TweetCriteria.py" />
     <Compile Include="TweetManager.py" />
   </ItemGroup>
   <Import Project="$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)\Python Tools\Microsoft.PythonTools.targets" />

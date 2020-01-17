@@ -27,6 +27,7 @@ class MYSQLDatabase(object):
     __InvalidOrds = [43, 64]
     __selectStmtFilter = { 'inner' : 0, 'outer' : 0}
     __tableTokenStop = { 'group' : 0, 'having' : 0 }
+    __funcSignature = re.compile('[a-z]+\(.+\)')
     __stripPunct = ''.join(list(set(string.punctuation + ' ')))
     __invalidCharsRE = re.compile('(\#|\(|\)|\*|\"|\')')
     
@@ -124,9 +125,10 @@ class MYSQLDatabase(object):
         Inputs:
         * tableName: String to name table.
         * schema: String with name of database (if omitted uses ActiveSchema).
-        * columns: Dictionary mapping { ColumnName -> (Type [Str], IsPKey [Bool], FKeyRef [Str]) }.
-        If IsPKey is true then column will be primary key of table. If FKeyRef is not 
-        blank then column will be foreign key referencing passed table (as RefTable(Column).
+        * columns: Dictionary mapping { ColumnName -> (Type [Str], IsPKey [Bool or Tuple], FKeyRef [Str]) }.
+        If IsPKey is true then column will be primary key of table. 
+        If IsPKey is a string then will make a composite key using all comma separated columns in string.
+        If FKeyRef is not blank then column will be foreign key referencing passed table (as RefTable(Column).
         """
         # Validate function inputs:
         if not schema:
@@ -144,7 +146,7 @@ class MYSQLDatabase(object):
             raise Exception('\n'.join(errMsgs))
 
         # Ensure that at least one column is specified:
-        numColumns = columns.keys()
+        numColumns = len(columns.keys())
         if numColumns == 0:
             raise Exception("At least one column must be specified.")
     
@@ -166,8 +168,14 @@ class MYSQLDatabase(object):
             variables.append(columnName + " " + columns[columnName][0])
             pKey = columns[columnName][1]
             # Check if column is the primary key, skip if one was already specified:
-            if pKey and not pKeyStr:
-                pKeyStr = "PRIMARY KEY(" + columnName + ")"
+            if pKey and not pKeyStr: 
+                if isinstance(pKey, str):
+                    compCols = ','.join([col.strip() for col in pKey.split(',')])
+                    pKeyStr = ''.join(["PRIMARY KEY(", compCols, ")"])
+                elif isinstance(pKey, bool) and pKey == True:
+                    pKeyStr = ''.join(["PRIMARY KEY(", columnName, ")"]) 
+            elif pKey and pKeyStr:
+                raise Exception('Only one primary key can exist per table.')
             # Check if column should use foreign key relationship with another table:
             if columns[columnName][2]:
                 fKeyStrings.append("FOREIGN KEY(" + columnName + ") REFERENCES " + columns[columnName][2])
@@ -216,15 +224,26 @@ class MYSQLDatabase(object):
             # Output results as dictionary mapping column name to value.
             # Extract table name and selected columns from select stmt:
             # Remove INNER/OUTER reserved words:
-            tokens = [token.strip(MYSQLDatabase.__stripPunct) for token in str.split(query, ' ')]
+            tokens = [token.strip(MYSQLDatabase.__stripPunct) if not MYSQLDatabase.__funcSignature.match(token) else token for token in str.split(query, ' ')]
             tokens = list(filter(lambda a : not a in MYSQLDatabase.__selectStmtFilter.keys(), tokens))
             fromIndex = tokens.index("from")
-            columnTokens = tokens[tokens.index("select") + 1: fromIndex]
+            columnTokens = {}
+            # Rename column names to aliases for output:
+            rawColTokens = tokens[tokens.index("select") + 1: fromIndex]
+            for index in range(0, len(rawColTokens)):
+                if index + 2 < len(rawColTokens) and rawColTokens[index + 1] == 'as':
+                    columnTokens[rawColTokens[index + 2]] = True
+                elif rawColTokens[index] != 'as' and rawColTokens[index] not in columnTokens.keys():
+                    columnTokens[rawColTokens[index]] = True
+            columnTokens = list(columnTokens.keys())
+            #columnTokens = [token for token in tokens[tokens.index("select") + 1: fromIndex] if token != 'as']
             aliasToTable = {}
+            # If join was performed, table aliases must have been used. 
+            # Rename <Alias>.<ColumnName> to <Table>.<ColumnName>:
             index = fromIndex
             while 'as' in tokens[index : len(tokens)]:
                 # We assume table name appears to immediate left of AS, alias to right:
-                index = index + tokens[index : len(tokens)].index("as")
+                index += tokens[index : len(tokens)].index("as")
                 tableName = tokens[index - 1]
                 alias = tokens[index + 1]
                 aliasToTable[alias] = tableName
@@ -261,6 +280,59 @@ class MYSQLDatabase(object):
 
             return output
 
+    def InsertInChunks(self, tableName, columns, chunkSize, schema = None, skipExceptions = False):
+        """
+        * Insert rows into table using chunk size.
+        Inputs:
+        * tableName: Expecting a string that refers to target table to insert data.
+        * columns: Expecting { ColumnName -> Values[] } map. Len(Values) must be
+        uniform for all columns.
+        * chunkSize: Number of rows to insert at a time. Must be numeric.
+        Optional Inputs:
+        * schema: Specify the schema for the table (string).
+        * skipExceptions: Put True to continue inserting if some rows failed to insert (boolean).
+        """
+        # Validate function parameters:
+        if not schema:
+            schema = self.ActiveSchema
+        errMsgs = self.__CheckParams(tableName, schema, columns)
+        tableName = tableName.lower()
+        if not isinstance(chunkSize, int) and not isinstance(chunkSize, float):
+            errMsgs.append('chunkSize must be numeric.')
+        if not isinstance(skipExceptions, bool):
+            errMsgs.append('skipExceptions must be boolean')
+        if len(errMsgs) > 0:
+            raise Exception('\n'.join(errMsgs))
+
+        numRows = len(columns[list(columns.keys())[0]])
+        chunkSize = min(int(chunkSize), numRows)
+        row = 0
+        currCols = {}
+        if skipExceptions:
+            while row < numRows:
+                end = min(row + chunkSize, numRows)
+                for col in columns.keys():
+                    currCols[col] = []
+                for row in range(row, end):
+                    for col in columns.keys():
+                        currCols[col].append(columns[col][row])
+                # Continue to insert rows if failed, if requested:
+                try:
+                    self.InsertValues(tableName, currCols, schema)
+                except:
+                    pass
+                row += 1
+        else:
+            while row < numRows:
+                end = min(row + chunkSize, numRows)
+                for col in columns.keys():
+                    currCols[col] = []
+                for row in range(row, end):
+                    for col in columns.keys():
+                        currCols[col].append(columns[col][row])
+                self.InsertValues(tableName, currCols, schema)
+                row += 1
+
     def InsertValues(self, tableName, columns, schema = None):
         """
         * Insert all values into the create database. 
@@ -268,6 +340,8 @@ class MYSQLDatabase(object):
         * tableName: Expecting a string that refers to target table to insert data.
         * columns: Expecting { ColumnName -> Values[] } map. Len(Values) must be
         uniform for all columns.
+        Optional Inputs:
+        * schema: Specify the schema for the table (string).
         """
         # Validate function parameters:
         if not schema:

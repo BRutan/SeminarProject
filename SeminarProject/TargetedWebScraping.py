@@ -57,21 +57,23 @@ class BrandQuery(object):
         Inputs:
         * subsidiaries: Expecting list of subsidiaries to query.
         """
-        if not isinstance(subsidiaries, list):
-            raise Exception('subsidiaries needs to be a list.')
+        if not isinstance(subsidiaries, dict):
+            raise Exception('subsidiaries needs to be a dictionary.')
 
         if not self.__driver:
             self.__StartBrowser()
 
         brands = {}
-        subDict = {}
-        for sub in subsidiaries:
+        searchSubs = {}
+        cleanedSubs = {}
+        cleanedToSub = {}
+        for sub in subsidiaries.keys():
             # Standardize by removing punctuation from subsidiary name, lower-case:
-            subDict[re.sub('[^\w\s]', '', sub.lower())] = True
-
-        #subs = [sub for index, sub in enumerate(subDict.keys()) if index < 20]
-        #subs = ', '.join(subs)
-        subs = ', '.join(list(subDict.keys()))
+            cleaned = re.sub('[^a-z]', '', sub.lower())
+            cleanedSubs[cleaned] = True
+            cleanedToSub[cleaned] = sub
+        # Enter subs to search for into search box:
+        subs = ', '.join([sub for sub in list(subsidiaries.keys())])
         self.__inputBox.send_keys(subs)
         self.__inputBox.send_keys(Keys.RETURN)
         self.__resultsTable = self.__driver.find_element_by_xpath('//*[@id="results"]')
@@ -79,8 +81,6 @@ class BrandQuery(object):
         # Extract all rows from the grid:
         time.sleep(3)
         numPages = self.__driver.find_element_by_xpath('//div[@class="skipWindow"]').text
-        #defaultTextNum = '1,351,237'
-        #numPages = unidecode(soup.find('div', {'class' : 'skipWindow'}).text)
         numPages = int(re.search('[0-9]+(,[0-9]+){0,1}', unidecode(numPages))[0].replace(',',''))
         pageNum = 1
         restartCount = 0
@@ -97,18 +97,18 @@ class BrandQuery(object):
                     if isActive and unidecode(isActive.text) == 'Active':
                         holder = row.find('td', { 'aria-describedby' : 'gridForsearch_pane_HOL' })
                         if holder:
-                            holderName = re.sub('[^\w\s]', '', unidecode(holder.text).strip().lower())
-                            if holderName in subDict.keys():
+                            holderName = re.sub('[^a-z]', '', unidecode(holder.text).strip().lower())
+                            if holderName in cleanedSubs.keys():
                                 brand = row.find('td', { 'aria-describedby' : 'gridForsearch_pane_BRAND'}).text.strip()
                                 if brand not in brands.keys():
                                     # Store date filed, holder:
-                                    brands[brand] = (unidecode(row.find('td', {'aria-describedby' : 'gridForsearch_pane_AD'}).text).strip(), holderName)
+                                    brands[brand] = (unidecode(row.find('td', {'aria-describedby' : 'gridForsearch_pane_AD'}).text).strip(), cleanedToSub[holderName])
                 # Move to the next page:
                 self.__nextPageButton = WebDriverWait(self.__resultsTable, 10).until(EC.element_to_be_clickable((By.XPATH, '//*[@aria-label="next page"]')))
                 self.__nextPageButton.click()
                 pageNum += 1
-                # Exit if pulled over 1000 brands:
-                if len(brands.keys()) > 1000:
+                # Exit if pulled over 1000 brands or passed through large number of pages:
+                if len(brands.keys()) > 300 or pageNum > 500:
                     return brands
             except:
                 # Testing:
@@ -218,6 +218,7 @@ class SubsidiaryQuery(object):
             searchBox = driver.find_element_by_xpath('//*[@title="Search"]')
             searchBox.send_keys(search)
             searchBox.send_keys(Keys.RETURN)
+            time.sleep(2)
             # Extract all subsidiaries from generated grid:
             soup = Soup(driver.page_source, 'lxml')
             grid = soup.find('g-scrolling-carousel')

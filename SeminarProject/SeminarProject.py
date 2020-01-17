@@ -5,15 +5,15 @@
 
 from TargetedWebScraping import BrandQuery, SubsidiaryQuery
 from CorporateFiling import CorporateFiling, TableItem, DocumentType, PullingSteps, SoupTesting
+from GetTweets import TweetPuller, Tweet
 import csv
 from DataBase import MYSQLDatabase
 from datetime import datetime, timedelta
 import gc
 import memcache
 from pandas.tseries import offsets
-from numpy.random import choice as choose
 import re
-from PullTwitterData import TwitterPuller
+#from PullTwitterData import TwitterPuller
 
 # Initiate cache to store brands that were searched:
 cache = memcache.Client(['127.0.0.1:11211'], debug=0)
@@ -27,10 +27,12 @@ class SeminarProject(object):
     """
     __utfSupport = 'CHARACTER SET utf8 COLLATE utf8_unicode_ci'
     __cacheKeySig = "{Corp:%s}{Brand:%s}"
-    def __init__(self, tickerPath, database):
+    def __init__(self, startDate, endDate, tickerPath, database):
         """
         * Initialize new object.
         """
+        self.StartDate = startDate
+        self.EndDate = endDate
         self.DB = database
         self.Tickers = {}
         # Get tickers from CSV file at tickerPath:
@@ -39,12 +41,15 @@ class SeminarProject(object):
         self.__PullTickers(tickerPath)
         self.CorpTableColumns = {"CorpID" : ["int", True, ""], "Name" : ["text", False, ""], 
                                  "Ticker" : ["varchar(5)", False, ""], "Industry" : ["text", False, ""], "Weight" : ["float", False, ""] }
-        self.CorpBrandTableColumns = {"CorpID" : ["int", False, "Corporations(CorpID)"], "Brands" : ["text " + SeminarProject.__utfSupport, False, ""], "AppDate" : ["Date", False, ""]}
-        self.SubsidariesTableColumns = {"CorpID" : ["int", False, "Corporations(CorpID)"], "Subsidiaries" : ["text", False, ""]}
+        self.CorpBrandTableColumns = {"CorpID" : ["int", False, "Corporations(CorpID)"], "Brands" : ["text " + SeminarProject.__utfSupport, False, ""], 
+                                      "AppDate" : ["Date", False, ""], "SubNum" : ["int", False, "Subsidiaries(Number)"]}
+        self.SubsidariesTableColumns = {"Number" : ["int", True, ""], "CorpID" : ["int", False, "Corporations(CorpID)"], "Subsidiaries" : ["text", False, ""]}
         self.DataColumns = { "CorpID" : ["int", False, "Corporations(CorpID)"], "SearchTerm" : ["text", False, ""], 
                        "User" : ["text " + SeminarProject.__utfSupport, False, ''], "Date" : ["date", False, ""], 
-                       "Tweet" : ["text " + SeminarProject.__utfSupport, False, ''] }
+                       "Tweet" : ["text " + SeminarProject.__utfSupport, False, ''], "SubNum" : ["int", False, "Subsidiaries(Number)"] }
         self.TickerToBrands = {}
+        # Map { Corporation -> { Subsidiary -> Number } }:
+        self.TickerToSubs = {}
         self.__PulledBrands = {}
         
     #######################
@@ -111,50 +116,58 @@ class SeminarProject(object):
         using query.
         """
         db = self.DB
-        queryString = ['SELECT A.Ticker, B.Subsidiaries FROM Corporations AS A']
-        queryString.append('INNER JOIN Subsidiaries As B ON A.CorpID = B.CorpID WHERE B.Subsidiaries IS NOT NULL;')
+        queryString = ['SELECT A.Ticker, B.Subsidiaries, B.Number FROM Corporations AS A']
+        queryString.append('INNER JOIN Subsidiaries As B ON A.CorpID = B.CorpID WHERE B.Number IS NOT NULL;')
         queryString = ' '.join(queryString)
         results = db.ExecuteQuery(queryString, getResults = True)
-        # Testing:
-        #results = None
-        self.TickerToSubs = {}
+        maxSubNum = 1
         # Determine if pulled some/all subsidiaries already:
         if len(results['corporations.ticker']) > 0:
             tickers = results['corporations.ticker']
             subs = results['subsidiaries.subsidiaries']
+            subNums = results['subsidiaries.number']
             row = 0
             for ticker in tickers:
                 if ticker not in self.TickerToSubs.keys():
-                    self.TickerToSubs[ticker] = []
-                self.TickerToSubs[ticker].append(subs[row])
+                    self.TickerToSubs[ticker] = {}
+                self.TickerToSubs[ticker][subs[row]] = subNums[row]
                 row += 1
+            maxSubNum = max(subNums) + 1
         if len(self.TickerToSubs.keys()) < len(self.Tickers.keys()):
+            # Testing:
+            return
             # Pull some subsidiaries from 10-Ks, if haven't been pulled in yet:
             yearEnd = datetime.today() + offsets.YearEnd()
             subs = re.compile('subsidiaries', re.IGNORECASE)
-            name = re.compile('name', re.IGNORECASE)
+            nameRE = re.compile('name', re.IGNORECASE)
             steps = PullingSteps(False, True, False)
             query = SubsidiaryQuery()
             for ticker in self.Tickers.keys():
                 if ticker not in self.TickerToSubs.keys():
                     doc = CorporateFiling(ticker, DocumentType.TENK, steps, date = yearEnd)
-                    insertData = {'CorpID' : [], 'Subsidiaries' : []}
-                    self.TickerToSubs[ticker] = []
+                    insertData = {'CorpID' : [], 'Subsidiaries' : [], 'Number' : [] }
+                    self.TickerToSubs[ticker] = {}
                     tableDoc, table = doc.FindTable(subs, False)
                     nameColumn = None
                     if table:
-                        nameColumn = table.FindColumn(name, False)
+                        nameColumn = table.FindColumn(nameRE, False)
                     else:
                         # Search google for subsidiaries:
                         query.GetResults(self.Tickers[ticker][0])
-                        self.TickerToSubs[ticker] = query.Results
+                        for result in query.Results:
+                            self.TickerToSubs[ticker][result] = maxSubNum
+                            maxSubNum += 1
                     if not nameColumn is None:
-                        self.TickerToSubs[ticker] = list(nameColumn)
+                        for name in list(nameColumn):
+                            self.TickerToSubs[ticker][name] = maxSubNum
+                            maxSubNum += 1
                     # Add the corporation's name itself:
-                    self.TickerToSubs[ticker].append(self.Tickers[ticker][0])
+                    self.TickerToSubs[ticker][self.Tickers[ticker][0]] = maxSubNum
+                    maxSubNum += 1
                     # Insert data into Subsidiaries table:
-                    insertData['CorpID'] = [self.__TickerToCorpNum[ticker]] * len(self.TickerToSubs[ticker])
-                    insertData['Subsidiaries'] = MYSQLDatabase.RemoveInvalidChars(self.TickerToSubs[ticker])
+                    insertData['CorpID'] = [self.__TickerToCorpNum[ticker]] * len(self.TickerToSubs[ticker].keys())
+                    insertData['Subsidiaries'] = MYSQLDatabase.RemoveInvalidChars([val for val in self.TickerToSubs[ticker].keys()])
+                    insertData['Number'] = [self.TickerToSubs[ticker][name] for name in self.TickerToSubs[ticker].keys()]
                     db.InsertValues("Subsidiaries", insertData)
                     gc.collect()
                     
@@ -164,7 +177,7 @@ class SeminarProject(object):
         """
         # Determine if brands were already loaded for each corporation:
         db = self.DB
-        query = ['SELECT A.ticker, B.brands, B.appdate, B.holder FROM corporations as A INNER JOIN corporatebrands as B']
+        query = ['SELECT A.ticker, B.brands, B.appdate, B.subnum FROM corporations as A INNER JOIN corporatebrands as B']
         query.append(' on A.corpid = B.corpid WHERE B.brands IS NOT NULL;')
         query = ''.join(query)
         results = db.ExecuteQuery(query, getResults = True)
@@ -172,12 +185,13 @@ class SeminarProject(object):
             tickers = results['corporations.ticker']
             brands = results['corporatebrands.brands']
             appdates = results['corporatebrands.appdate']
-            holders = results['corporatebrands.holder']
+            subnums = results['corporatebrands.subnum']
             row = 0
             for ticker in tickers: 
                 if ticker not in self.TickerToBrands.keys():
                     self.TickerToBrands[ticker] = []
-                self.TickerToBrands[ticker].append((brands[row], appdates[row], holders[row]))
+                # Map to (Brand, Date, SubNum):
+                self.TickerToBrands[ticker].append((brands[row], appdates[row], subnums[row]))
                 row += 1
                 
         # Pull all brands from WIPO database website:
@@ -192,26 +206,70 @@ class SeminarProject(object):
                     brands = query.PullBrands(subsidiaries)
                     insertValues['corpid'] = [self.__TickerToCorpNum[ticker]] * len(brands.keys())
                     insertValues['brands'] = MYSQLDatabase.RemoveInvalidChars(list(brands.keys()))
-                    insertValues['appdate'] = MYSQLDatabase.RemoveInvalidChars([brands[key][0] for key in list(brands.keys())])
-                    insertValues['holder'] = MYSQLDatabase.RemoveInvalidChars([brands[key][1] for key in list(brands.keys())])
+                    insertValues['appdate'] = MYSQLDatabase.RemoveInvalidChars([re.sub('[^0-9\-]','',brands[key][0]) for key in list(brands.keys())])
+                    insertValues['subnum'] = [self.TickerToSubs[ticker][brands[key][1]] for key in brands.keys()]
                     # Push brands into the mysql database:
-                    db.InsertValues("corporatebrands", insertValues)
+                    db.InsertInChunks("corporatebrands", insertValues, 50, skipExceptions=True)
+                    gc.collect()
 
     def GetTweets(self):
         """
         * Randomly sample all tweets and insert into associated table in schema.
         """
-        puller = TwitterPuller()
+        # Determine which companies have already been sampled:
+        query = ['SELECT COUNT(*) AS Count FROM ', '', ';']
+        db = self.DB
+        pulledTickers = {}
+        for ticker in self.TickerToTable:
+            query[1] = self.TickerToTable[ticker]
+            results = db.ExecuteQuery(''.join(query), getResults = True)
+            if results and results['count'][0] > 0:
+                pulledTickers[ticker] = True
+
+        args = {}
+        args['since'] = self.StartDate
+        args['until'] = self.EndDate
+        args['interDaySampleSize'] = 100
+        args['termSampleSize'] = 100
+        insertValues = {}
+        puller = TweetPuller()
+        # Pull tweets for all corporations that haven't been sampled already:
         for ticker in self.Tickers.keys():
-            insertValues = {}
-            for brand in self.TickerToBrands[ticker]:
-                if brand not in self.__PulledBrands[ticker]:
-                    # Sample tweets that mention brand.
-                    samples = choose(100, 45, replace=False)
-                    tweets = puller.PullTweets('', 100, brand)
-                    tweets = [tweets[i] for i in samples]
-                    
+            if ticker not in pulledTickers.keys():
+                insertValues['CorpID'] = []
+                insertValues['Term'] = []
+                insertValues['User'] = []
+                insertValues['Date'] = []
+                insertValues['Tweet'] = []
+                insertValues['SubNum'] = []
+                table = self.TickerToTable[ticker]
+                corpID = self.__TickerToCorpNum[ticker]
+                # Select brands that were filed:
+                # Map to (Brand, Date, SubNum):
+                vals = self.TickerToBrands[ticker]
+                # Skip all brands that were trademarked after the analysis start date:
+                vals = [val for val in vals if val[1] <= self.StartDate.date()]
+                args['searchTerms'] = [val[0] for val in vals]
+                args['subs'] = [val[2] for val in vals]
+                # Randomly sample tweets based upon args:
+                results = puller.PullTweets(args)
+                for term in results.keys():
+                    for tweet in results[term]:
+                        insertValues['CorpID'].append(corpID)
+                        insertValues['Term'].append(term)
+                        insertValues['User'].append(tweet.Username)
+                        insertValues['Date'].append(tweet.Date)
+                        insertValues['Tweet'].append(tweet.Text)
+                        insertValues['SubNum'].append(tweet.Subsidiary)
+                    db.InsertValues(table, insertValues)
         
+    def GetHistoricalData(self):
+        """
+        * Get historical data for all tickers over past year.
+        """
+        for ticker in self.Tickers:
+            pass
+
     ########################
     # Private Helpers:
     ########################
