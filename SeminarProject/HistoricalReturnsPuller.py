@@ -12,8 +12,7 @@ class ReturnsPuller(object):
     """
     * Pull historical returns for ticker between dates.
     """
-    __HistoricalPriceCols = { 'CorpID' : ['int', False, 'Corporations(CorpID)'], 'Adj_Close' : ['float', False, ''] }    
-
+    
     def GetPrices(self, ticker):
 	    data = DataReader(ticker, 'yahoo', self.__startDate, self.__endDate)['Adj Close']
 	    for row, date in enumerate(list(data.keys())):

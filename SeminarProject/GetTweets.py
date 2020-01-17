@@ -56,30 +56,49 @@ class TweetPuller(object):
         for termNum, term in enumerate(terms):
             results[term] = []
             sub = subs[termNum]
+            # Testing:
             _args['search'] = term
-            for day in range(1, numDays + 1):
-                _args['start'] = (startDate + datetime.timedelta(days = day)).strftime('%Y-%m-%d')
-                _args['until'] = (startDate + datetime.timedelta(days = day - 1)).strftime('%Y-%m-%d')
-                query = self.__JsonQuery(_args)
-                # Check if no results occurred:
-                if len(query['items_html'].strip()) == 0:
-                    continue
+            _args['start'] = startDate.strftime('%Y-%m-%d')
+            _args['until'] = endDate.strftime('%Y-%m-%d')
+            query = self.__JsonQuery(_args)
+            # Check if no results occurred:
+            if len(query['items_html'].strip()) == 0:
+                continue
 
-                _args['refreshCursor'] = query['min_position']
-                scrapedTweets = PyQuery(query['items_html'])
-                # Remove incomplete tweets withheld by Twitter Guidelines:
-                scrapedTweets.remove('div.withheld-tweet')
-                tweets = scrapedTweets('div.js-stream-tweet')
-                if len(tweets) == 0:
-                    continue
+            _args['refreshCursor'] = query['min_position']
+            scrapedTweets = PyQuery(query['items_html'])
+            # Remove incomplete tweets withheld by Twitter Guidelines:
+            scrapedTweets.remove('div.withheld-tweet')
+            tweets = scrapedTweets('div.js-stream-tweet')
+            if len(tweets) == 0:
+                continue
 
-                for tweetHTML in tweets:
-                    tweetPQ = PyQuery(tweetHTML)
-                    tweet = Tweet(tweetPQ, sub)
-                    results[term].append(tweet)
+            for tweetHTML in tweets:
+                tweetPQ = PyQuery(tweetHTML)
+                tweet = Tweet(tweetPQ, sub)
+                results[term].append(tweet)
 
-                if len(results[term]) > 10:
-                    return
+            if 1 > 2:
+                for day in range(1, numDays + 1):
+                    _args['start'] = (startDate + datetime.timedelta(days = day)).strftime('%Y-%m-%d')
+                    _args['until'] = (startDate + datetime.timedelta(days = day - 1)).strftime('%Y-%m-%d')
+                    query = self.__JsonQuery(_args)
+                    # Check if no results occurred:
+                    if len(query['items_html'].strip()) == 0:
+                        continue
+
+                    _args['refreshCursor'] = query['min_position']
+                    scrapedTweets = PyQuery(query['items_html'])
+                    # Remove incomplete tweets withheld by Twitter Guidelines:
+                    scrapedTweets.remove('div.withheld-tweet')
+                    tweets = scrapedTweets('div.js-stream-tweet')
+                    if len(tweets) == 0:
+                        continue
+
+                    for tweetHTML in tweets:
+                        tweetPQ = PyQuery(tweetHTML)
+                        tweet = Tweet(tweetPQ, sub)
+                        results[term].append(tweet)
 
         return results
 

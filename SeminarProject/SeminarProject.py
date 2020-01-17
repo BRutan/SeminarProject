@@ -47,9 +47,12 @@ class SeminarProject(object):
         self.DataColumns = { "CorpID" : ["int", False, "Corporations(CorpID)"], "SearchTerm" : ["text", False, ""], 
                        "User" : ["text " + SeminarProject.__utfSupport, False, ''], "Date" : ["date", False, ""], 
                        "Tweet" : ["text " + SeminarProject.__utfSupport, False, ''], "SubNum" : ["int", False, "Subsidiaries(Number)"] }
+        self.HistoricalPriceCols = { 'CorpID' : ['int', False, 'Corporations(CorpID)'], 'Adj_Close' : ['float', False, ''], 'Date' : ['Date', False, ''] }    
+
         self.TickerToBrands = {}
         # Map { Corporation -> { Subsidiary -> Number } }:
         self.TickerToSubs = {}
+        self.TickerToReturnTable = {}
         self.__PulledBrands = {}
         
     #######################
@@ -99,15 +102,23 @@ class SeminarProject(object):
             db.CreateTable("CorporateBrands", self.CorpBrandTableColumns, schema = "Research_Seminar_Project")
 
         # Create all Corporations tables:
-        dataColumns = self.DataColumns
-        tableSig = "Tweets_%s"
-        # Create Tweets_{Ticker} table for each corporation:
-        # One table for each ticker using listed columns:
+        tweetColumns = self.DataColumns
+        returnColumns = self.HistoricalPriceCols
+        tweetTableSig = "Tweets_%s"
+        returnTableSig = "Returns_%s"
+        # Create Tweets_{Ticker}, Returns_{Ticker} table for tweet and returns data for 
+        # each corporation:
         for ticker in tickerToCorps.keys():
-            tableName = tableSig % ticker.strip()
+            # Create tweet data table:
+            tableName = tweetTableSig % ticker.strip()
             self.TickerToTable[ticker] = tableName
             if not db.TableExists(tableName):
-                db.CreateTable(tableName, dataColumns)
+                db.CreateTable(tableName, tweetColumns)
+            # Create return data table:
+            tableName = returnTableSig % ticker.strip()
+            self.TickerToReturnTable[ticker] = tableName
+            if not db.TableExists(tableName):
+                db.CreateTable(tableName, returnColumns)
 
     def GetSubsidiaries(self):
         """
@@ -230,7 +241,7 @@ class SeminarProject(object):
         args['since'] = self.StartDate
         args['until'] = self.EndDate
         args['interDaySampleSize'] = 100
-        args['termSampleSize'] = 100
+        #args['termSampleSize'] = 100
         insertValues = {}
         puller = TweetPuller()
         # Pull tweets for all corporations that haven't been sampled already:
@@ -254,14 +265,15 @@ class SeminarProject(object):
                 # Randomly sample tweets based upon args:
                 results = puller.PullTweets(args)
                 for term in results.keys():
-                    for tweet in results[term]:
-                        insertValues['CorpID'].append(corpID)
-                        insertValues['Term'].append(term)
-                        insertValues['User'].append(tweet.Username)
-                        insertValues['Date'].append(tweet.Date)
-                        insertValues['Tweet'].append(tweet.Text)
-                        insertValues['SubNum'].append(tweet.Subsidiary)
-                    db.InsertValues(table, insertValues)
+                    if len(results[term]) > 0:
+                        for tweet in results[term]:
+                            insertValues['CorpID'].append(corpID)
+                            insertValues['Term'].append(term)
+                            insertValues['User'].append(tweet.Username)
+                            insertValues['Date'].append(tweet.Date)
+                            insertValues['Tweet'].append(tweet.Text)
+                            insertValues['SubNum'].append(self.TTickerToSubs[ticker][tweet.Subsidiary])
+                        db.InsertValues(table, insertValues)
         
     def GetHistoricalData(self):
         """
