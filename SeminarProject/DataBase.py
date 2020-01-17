@@ -409,7 +409,7 @@ class MYSQLDatabase(object):
             csvPath = csvPath[0:csvPath.rfind('.')] + '.csv'
         if not isinstance(query, str):
             errMsgs.append("query must be a string.")
-        elif "select" not in query or "SELECT" not in query:
+        elif "select" not in query.lower():
             errMsgs.append("query must be a select statement.")
         if schema and not isinstance(schema, str):
             errMsgs.append("schema must be a string if specified.")
@@ -423,18 +423,23 @@ class MYSQLDatabase(object):
             raise Exception(msg)
 
         # Pull data from select statement:
+        query = query.lower()
         data = self.ExecuteQuery(query, schema, getResults=True)
-        with open(csvPath, 'w', newline='') as f:
-            writer = csv.writer(f)
-            # Write headers:
-            columnHeaders = list(data.keys())
-            writer.writerow(columnHeaders)
-            rowLen = len(data[columnHeaders[0]])
-            for row in range(0, rowLen):
-                currRow = []
-                for column in data.keys():
-                    currRow.append(data[column][row])
-                writer.writerow(currRow)
+        if data and len(data[list(data.keys())[0]]) > 0:
+            with open(csvPath, 'w', newline='') as f:
+                writer = csv.writer(f)
+                # Write headers:
+                columnHeaders = list(data.keys())
+                writer.writerow(columnHeaders)
+                rowLen = len(data[columnHeaders[0]])
+                for row in range(0, rowLen):
+                    currRow = []
+                    for column in data.keys():
+                        currRow.append(data[column][row])
+                    writer.writerow(currRow)
+            return True
+        else:
+            return False
 
     def TableExists(self, tableName):
         """

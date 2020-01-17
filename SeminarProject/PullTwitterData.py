@@ -14,19 +14,11 @@ class TwitterPuller(object):
     ###############################
     # Constructors:
     ###############################
-    def __init__(self, keywords = None):
+    def __init__(self):
         """
-        * Create new twitter puller object using default tokens listed in file.
-        Parameters:
-        * keywords: Expecting list of all keywords.
+        * Create new twitter puller object.
         """
-        if keywords and not isinstance(keywords, list):
-            raise Exception('keywords must be None or a list.')
-        # Remove all non-unicode characters and blanks in each keyword:
-        if keywords:
-            self.__keywords = [keyword.strip() for keyword in keywords if keyword.strip()]
-        else:
-            self.__keywords = []
+        pass
     ###############################
     # Public Functions:
     ###############################
@@ -38,18 +30,18 @@ class TwitterPuller(object):
         """
         pass
     
-    def PullTweets(self, startDate, endDate, subs, numTweets = 3000):
+    def PullTweets(self, args, numTweets = 3000):
         """
         * Pull all tweets using stored keywords object.
         """
-        startDate = startDate.strftime('%Y-%m-%d')
-        endDate = endDate.strftime('%Y-%m-%d')
         results = {}
+        subs = args['subs']
+        keywords = args['searchTerms']
         tweetCriteria = got.manager.TweetCriteria()
-        tweetCriteria = tweetCriteria.setSince(startDate)
-        tweetCriteria = tweetCriteria.setUntil(endDate)
+        tweetCriteria = tweetCriteria.setSince(args['since'])
+        tweetCriteria = tweetCriteria.setUntil(args['until'])
         tweetCriteria = tweetCriteria.setMaxTweets(numTweets)
-        for num, keyword in enumerate(self.__keywords):
+        for num, keyword in enumerate(keywords):
             try:
                 tweetCriteria = tweetCriteria.setQuerySearch(keyword)
                 tweets = got.manager.TweetManager.getTweets(tweetCriteria)

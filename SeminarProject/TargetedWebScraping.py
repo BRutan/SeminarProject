@@ -100,7 +100,7 @@ class BrandQuery(object):
                 self.__nextPageButton.click()
                 pageNum += 1
                 # Exit if pulled over certain number of brands or passed through large number of pages:
-                if len(brands.keys()) > 400 or pageNum > 500:
+                if len(brands.keys()) > 600 or pageNum > 300:
                     return brands
             except:
                 # Testing:

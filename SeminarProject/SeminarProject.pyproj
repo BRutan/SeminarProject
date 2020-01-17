@@ -11,6 +11,7 @@
     <OutputPath>.</OutputPath>
     <Name>SeminarProject</Name>
     <RootNamespace>SeminarProject</RootNamespace>
+    <InterpreterId>Global|PythonCore|3.7-32</InterpreterId>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)' == 'Debug' ">
     <DebugSymbols>true</DebugSymbols>
@@ -36,8 +37,6 @@
     <Compile Include="DataBase.py" />
     <Compile Include="HelperFunctions.py" />
     <Compile Include="Main.py" />
-    <Compile Include="Project.py" />
-    <Compile Include="Pull10Ks.py" />
     <Compile Include="PullTwitterData.py" />
     <Compile Include="SeminarProject.py">
       <SubType>Code</SubType>
@@ -45,6 +44,9 @@
     <Compile Include="SentimentAnalyzer.py" />
     <Compile Include="TweetCriteria.py" />
     <Compile Include="TweetManager.py" />
+  </ItemGroup>
+  <ItemGroup>
+    <InterpreterReference Include="Global|PythonCore|3.7-32" />
   </ItemGroup>
   <Import Project="$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)\Python Tools\Microsoft.PythonTools.targets" />
   <!-- Uncomment the CoreCompile target to enable the Build command in

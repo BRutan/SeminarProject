@@ -11,15 +11,11 @@ from DataBase import MYSQLDatabase
 from datetime import datetime, timedelta
 import gc
 #import memcache
+import nltk
+from nltk.corpus import stopwords
 from pandas.tseries import offsets
 import re
 from PullTwitterData import TwitterPuller
-
-# Initiate cache to store brands that were searched:
-#cache = memcache.Client(['127.0.0.1:11211'], debug=0)
-# Use key signature to keep track of brands that have been pulled for company, in case
-# script fails:
-#__cacheKeySig = "{Corp:%s}{Brand:%s}"
 
 class SeminarProject(object):
     """
@@ -27,6 +23,7 @@ class SeminarProject(object):
     """
     __utfSupport = 'CHARACTER SET utf8 COLLATE utf8_unicode_ci'
     __cacheKeySig = "{Corp:%s}{Brand:%s}"
+    __stopWords = { re.sub('[^a-z]', '', word.lower()) : True for word in set(stopwords.words('english')) }
     def __init__(self, startDate, endDate, tickerPath, database):
         """
         * Initialize new object.
@@ -207,6 +204,7 @@ class SeminarProject(object):
               
         # Pull all brands from WIPO database website:
         if len(self.TickerToBrands.keys()) < len(self.Tickers.keys()):
+            # Testing:
             return
             query = BrandQuery()
             for ticker in self.Tickers.keys():
@@ -226,13 +224,7 @@ class SeminarProject(object):
         """
         * Randomly sample all tweets and insert into associated table in schema.
         """
-        # Testing:
-        #for ticker in self.TickerToSubs.keys():
-        #    if ticker in self.TickerToBrands.keys():
-        #        test = TwitterPuller([val[0] for val in self.TickerToBrands[ticker]])
-        #        results = test.PullTweets(self.StartDate, 100)
         # Determine which companies have already been sampled:
-        return
         query = ['SELECT COUNT(*) AS Count FROM ', '', ';']
         db = self.DB
         pulledTickers = {}
@@ -263,14 +255,15 @@ class SeminarProject(object):
                 # Select brands that were filed:
                 # Map to (Brand, Date, SubNum):
                 vals = self.TickerToBrands[ticker]
-                # Skip all brands that were trademarked after the analysis start date:
-                vals = [val for val in vals if val[1] <= self.StartDate.date()]
+                # Skip all brands that were trademarked after the analysis start date, 
+                # or are short words/letters:
+                vals = [val for val in vals if val[1] <= self.StartDate.date() and val[1] not in SeminarProject.__stopWords.keys() and len(val[1]) > 2]
                 args['searchTerms'] = [val[0] for val in vals]
                 args['subs'] = [val[2] for val in vals]
                 # Randomly sample tweets based upon args:
-                results = puller.PullTweets(args)
-                #puller = TwitterPuller(args['searchTerms'])
-                #results = puller.PullTweets(self.StartDate, self.EndDate, args['subs'])
+                #results = puller.PullTweets(args)
+                puller = TwitterPuller()
+                results = puller.PullTweets(self.StartDate, self.EndDate, args['subs'])
                 for term in results.keys():
                     if len(results[term]) > 0:
                         for tweet in results[term]:
@@ -292,6 +285,13 @@ class SeminarProject(object):
     ########################
     # Private Helpers:
     ########################
+    def __DownloadStopWords(self):
+        """
+        * Download stopwords if necessary.
+        """
+        if not os.path.exists('C:\\Users\\rutan\\AppData\\Roaming\\nltk_data\\corpora\\stopwords\\'):
+            nltk.download('stopwords')
+
     def __PullTickers(self, tickerPath):
         """
         * Pull in all consumer discretionary tickers and other attributes from local file.
