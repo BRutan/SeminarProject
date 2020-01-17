@@ -10,16 +10,16 @@ import csv
 from DataBase import MYSQLDatabase
 from datetime import datetime, timedelta
 import gc
-import memcache
+#import memcache
 from pandas.tseries import offsets
 import re
 from PullTwitterData import TwitterPuller
 
 # Initiate cache to store brands that were searched:
-cache = memcache.Client(['127.0.0.1:11211'], debug=0)
+#cache = memcache.Client(['127.0.0.1:11211'], debug=0)
 # Use key signature to keep track of brands that have been pulled for company, in case
 # script fails:
-__cacheKeySig = "{Corp:%s}{Brand:%s}"
+#__cacheKeySig = "{Corp:%s}{Brand:%s}"
 
 class SeminarProject(object):
     """
@@ -204,11 +204,10 @@ class SeminarProject(object):
                 # Map to (Brand, Date, SubNum):
                 self.TickerToBrands[ticker].append((brands[row], appdates[row], subnums[row]))
                 row += 1
-                
+              
         # Pull all brands from WIPO database website:
         if len(self.TickerToBrands.keys()) < len(self.Tickers.keys()):
-            # Testing:
-            #return
+            return
             query = BrandQuery()
             for ticker in self.Tickers.keys():
                 if ticker not in self.TickerToBrands.keys():
@@ -341,13 +340,13 @@ class SeminarProject(object):
         to handle script stoppage issues.
         """
         val = SeminarProject.__cacheKeySig % (ticker, brand)
-        cache.set(val, 30000)
+        #cache.set(val, 30000)
     def __PullFromCache(self, ticker, brand):
         """
         * Pull all information regarding pulled brands for corp from cache.
         """
         val = SeminarProject.__cacheKeySig % (ticker, brand)
-        result = cache.get(val)
+        #result = cache.get(val)
         if result:
             self.__PulledBrands[ticker].append(brand)
             

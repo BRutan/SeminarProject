@@ -11,7 +11,7 @@ from collections import Counter
 import csv
 import DataBase
 import os
-import memcache
+#import memcache
 import nltk
 from sec_edgar_downloader import Downloader
 from nltk.stem import WordNetLemmatizer, SnowballStemmer
@@ -25,7 +25,7 @@ import sys
 # https://commaster.net/posts/installing-memcached-windows/
 
 # Initiate cache:
-cache = memcache.Client(['127.0.0.1:11211'], debug=0)
+#cache = memcache.Client(['127.0.0.1:11211'], debug=0)
 __cacheKeySig = "brands%s"
 
 nltk.download('punkt')

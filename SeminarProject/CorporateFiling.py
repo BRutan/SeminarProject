@@ -11,7 +11,6 @@ from bs4 import BeautifulSoup as Soup
 import csv
 from datetime import date, datetime
 from enum import Enum
-import _locale
 import pandas as p 
 import numpy as n
 import re
@@ -20,8 +19,7 @@ from sortedcontainers import SortedSet, SortedList
 import string
 import sys
 import os
-from xbrl import XBRLParser, GAAP
-import unicodecsv as uniCSV
+#from xbrl import XBRLParser, GAAP
 import unicodedata as uni
 from unidecode import unidecode
 
