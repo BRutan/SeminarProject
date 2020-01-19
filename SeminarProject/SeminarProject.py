@@ -13,6 +13,7 @@ import gc
 #import memcache
 import nltk
 from nltk.corpus import stopwords
+from numpy.random import choice as choose
 from pandas.tseries import offsets
 import re
 from PullTwitterData import TwitterPuller
@@ -42,8 +43,11 @@ class SeminarProject(object):
                                       "AppDate" : ["Date", False, ""], "SubNum" : ["int", False, "Subsidiaries(Number)"]}
         self.SubsidariesTableColumns = {"Number" : ["int", True, ""], "CorpID" : ["int", False, "Corporations(CorpID)"], "Subsidiaries" : ["text", False, ""]}
         self.DataColumns = { "CorpID" : ["int", False, "Corporations(CorpID)"], "SearchTerm" : ["text", False, ""], 
-                       "User" : ["text " + SeminarProject.__utfSupport, False, ''], "Date" : ["date", False, ""], 
-                       "Tweet" : ["text " + SeminarProject.__utfSupport, False, ''], "SubNum" : ["int", False, "Subsidiaries(Number)"] }
+                       "User" : ["text " + SeminarProject.__utfSupport, False, ''], 
+                       "Date" : ["date", False, ""], 
+                       "Tweet" : ["text " + SeminarProject.__utfSupport, False, ''], 
+                       "Retweets" : ["int", False, ""], 
+                       "SubNum" : ["int", False, "Subsidiaries(Number)"] }
         self.HistoricalPriceCols = { 'CorpID' : ['int', False, 'Corporations(CorpID)'], 'Adj_Close' : ['float', False, ''], 'Date' : ['Date', False, ''] }    
 
         self.TickerToBrands = {}
@@ -71,7 +75,7 @@ class SeminarProject(object):
         # Connect to database, pull in current company table names:
         db = self.DB
         tickerToCorps = self.Tickers
-        self.TickerToTable = {}
+        self.TickerToTweetTable = {}
         # Skip creating corporations table if already created:
         if not db.TableExists("Corporations"):
             corpTableColumns = self.CorpTableColumns
@@ -108,7 +112,7 @@ class SeminarProject(object):
         for ticker in tickerToCorps.keys():
             # Create tweet data table:
             tableName = tweetTableSig % ticker.strip()
-            self.TickerToTable[ticker] = tableName
+            self.TickerToTweetTable[ticker] = tableName
             if not db.TableExists(tableName):
                 db.CreateTable(tableName, tweetColumns)
             # Create return data table:
@@ -136,14 +140,12 @@ class SeminarProject(object):
             subNums = results['subsidiaries.number']
             row = 0
             for ticker in tickers:
-                if ticker not in self.TickerToSubs.keys():
+                if ticker not in self.TickerToSubs:
                     self.TickerToSubs[ticker] = {}
                 self.TickerToSubs[ticker][subs[row]] = subNums[row]
                 row += 1
             maxSubNum = max(subNums) + 1
         if len(self.TickerToSubs.keys()) < len(self.Tickers.keys()):
-            # Testing:
-            #return
             # Pull some subsidiaries from 10-Ks, if haven't been pulled in yet:
             yearEnd = datetime.today() + offsets.YearEnd()
             subs = re.compile('subsidiaries', re.IGNORECASE)
@@ -151,7 +153,7 @@ class SeminarProject(object):
             steps = PullingSteps(False, True, False)
             query = SubsidiaryQuery()
             for ticker in self.Tickers.keys():
-                if ticker not in self.TickerToSubs.keys():
+                if ticker not in self.TickerToSubs:
                     doc = CorporateFiling(ticker, DocumentType.TENK, steps, date = yearEnd)
                     insertData = {'CorpID' : [], 'Subsidiaries' : [], 'Number' : [] }
                     self.TickerToSubs[ticker] = {}
@@ -196,7 +198,7 @@ class SeminarProject(object):
             subnums = results['corporatebrands.subnum']
             row = 0
             for ticker in tickers: 
-                if ticker not in self.TickerToBrands.keys():
+                if ticker not in self.TickerToBrands:
                     self.TickerToBrands[ticker] = []
                 # Map to (Brand, Date, SubNum):
                 self.TickerToBrands[ticker].append((brands[row], appdates[row], subnums[row]))
@@ -208,16 +210,17 @@ class SeminarProject(object):
             return
             query = BrandQuery()
             for ticker in self.Tickers.keys():
-                if ticker not in self.TickerToBrands.keys():
+                if ticker not in self.TickerToBrands:
                     insertValues = {}
                     subsidiaries = self.TickerToSubs[ticker]
                     brands = query.PullBrands(subsidiaries)
-                    insertValues['corpid'] = [self.__TickerToCorpNum[ticker]] * len(brands.keys())
-                    insertValues['brands'] = MYSQLDatabase.RemoveInvalidChars(list(brands.keys()))
-                    insertValues['appdate'] = MYSQLDatabase.RemoveInvalidChars([re.sub('[^0-9\-]','',brands[key][0]) for key in list(brands.keys())])
-                    insertValues['subnum'] = [self.TickerToSubs[ticker][brands[key][1]] for key in brands.keys()]
-                    # Push brands into the mysql database:
-                    db.InsertInChunks("corporatebrands", insertValues, 50)
+                    if brands and len(brands[list(brands.keys())[0]]) > 0:
+                        insertValues['corpid'] = [self.__TickerToCorpNum[ticker]] * len(brands.keys())
+                        insertValues['brands'] = MYSQLDatabase.RemoveInvalidChars(list(brands.keys()))
+                        insertValues['appdate'] = MYSQLDatabase.RemoveInvalidChars([re.sub('[^0-9\-]','', brands[key][0]) for key in list(brands.keys())])
+                        insertValues['subnum'] = [self.TickerToSubs[ticker][brands[key][1]] for key in brands.keys()]
+                        # Push brands into the mysql database:
+                        db.InsertInChunks("corporatebrands", insertValues, 50)
                     gc.collect()
 
     def GetTweets(self):
@@ -225,66 +228,112 @@ class SeminarProject(object):
         * Randomly sample all tweets and insert into associated table in schema.
         """
         # Determine which companies have already been sampled:
-        query = ['SELECT COUNT(*) AS Count FROM ', '', ';']
+        query = ['SELECT A.Name, B.SearchTerm FROM Corporations AS A INNER JOIN ', '', ' AS B ON A.CorpID = B.CorpID WHERE B.SearchTerm IS NOT NULL;']
         db = self.DB
-        pulledTickers = {}
-        for ticker in self.TickerToTable.keys():
-            query[1] = self.TickerToTable[ticker]
+        tickersToSearchTerms = {}
+        for ticker in self.TickerToTweetTable.keys():
+            table = self.TickerToTweetTable[ticker].lower()
+            query[1] = table
             results = db.ExecuteQuery(''.join(query), getResults = True)
-            if results and results['count'][0] > 0:
-                pulledTickers[ticker] = True
+            if results and len(results.keys()) > 0 and len(results[table + '.searchterm']) > 0:
+                tickersToSearchTerms[ticker] = {term.lower() : True for term in results[table + '.searchterm']}
 
         args = {}
         args['since'] = self.StartDate
         args['until'] = self.EndDate
-        args['interDaySampleSize'] = 100
+        args['interDaySampleSize'] = 50
         args['termSampleSize'] = 100
+        args['dateStep'] = 5
         insertValues = {}
-        puller = TweetPuller()
+        puller = TwitterPuller()
+        #puller = TweetPuller()
         # Pull tweets for all corporations that haven't been sampled already:
-        for ticker in self.Tickers.keys():
-            if ticker not in pulledTickers.keys():
-                insertValues['CorpID'] = []
-                insertValues['Term'] = []
-                insertValues['User'] = []
-                insertValues['Date'] = []
-                insertValues['Tweet'] = []
-                insertValues['SubNum'] = []
-                table = self.TickerToTable[ticker]
-                corpID = self.__TickerToCorpNum[ticker]
-                # Select brands that were filed:
-                # Map to (Brand, Date, SubNum):
-                vals = self.TickerToBrands[ticker]
-                # Skip all brands that were trademarked after the analysis start date, 
-                # or are short words/letters:
-                vals = [val for val in vals if val[1] <= self.StartDate.date() and val[1] not in SeminarProject.__stopWords.keys() and len(val[1]) > 2]
-                args['searchTerms'] = [val[0] for val in vals]
-                args['subs'] = [val[2] for val in vals]
-                # Randomly sample tweets based upon args:
-                #results = puller.PullTweets(args)
-                puller = TwitterPuller()
-                results = puller.PullTweets(self.StartDate, self.EndDate, args['subs'])
-                for term in results.keys():
-                    if len(results[term]) > 0:
-                        for tweet in results[term]:
-                            insertValues['CorpID'].append(corpID)
-                            insertValues['Term'].append(term)
-                            insertValues['User'].append(tweet.Username)
-                            insertValues['Date'].append(tweet.Date)
-                            insertValues['Tweet'].append(MYSQLDatabase.RemoveInvalidChars(tweet.Text))
-                            insertValues['SubNum'].append(self.TickerToSubs[ticker][tweet.Subsidiary])
-                        db.InsertInChunks(table, insertValues, 50)
-        
+        for ticker in self.TickerToBrands.keys():
+            if ticker not in tickersToSearchTerms:
+                tickersToSearchTerms[ticker] = {}
+            table = self.TickerToTweetTable[ticker]
+            corpID = self.__TickerToCorpNum[ticker]
+            # Select brands that were filed:
+            # Map to (Brand, Date, SubNum):
+            vals = self.TickerToBrands[ticker]
+            # Skip all brands that were trademarked after the analysis start date, 
+            # or are short words/letters:
+            vals = self.__FilterAndSampleSearchTerms(tickersToSearchTerms[ticker], vals, args['termSampleSize'])
+            args['searchTerms'] = [val[0] for val in vals]
+            args['subs'] = [val[2] for val in vals]
+            # Randomly sample tweets based upon args:
+            #results = puller.PullTweets(args)
+            for num, term in enumerate(args['searchTerms']):
+                sub = args['subs'][num]
+                puller.PullTweetsAndInsert(args, corpID, sub, table, term, db, numTweets = args['interDaySampleSize'])
+                tickersToSearchTerms[ticker][term] = True
+           
+    def OutputSentimentScoreReport(self, ticker):
+        """
+        * Calculate sentiment scores using stored tweets, output to local csv file.
+        """
+        table = self.TickerToTweetTable[ticker]
+        fileName = ''.join([ticker, '_scores.csv'])
+        query = ['SELECT A.searchTerm, A.user, A.date, A.tweet, A.retweets, B.SubNum FROM ']
+        query.append(table)
+        query.append(' AS A INNER JOIN subsidiaries AS B ON A.SubNum = B.Number;')
+        query = ''.join(query)
+        results = self.DB.ExecuteQuery(query, getResults = True)
+        if len(results[list(results.keys())[0]]) > 0:
+            with open(fileName, 'w') as f:
+                writer = csv.writer(f)
+                columns = results.keys()
+                headers = [header[header.index('.') : len(header)] for header in columns]
+                writer.writerow(headers)
+                for result in results:
+                    row = []
+                    for column in columns:
+                        row.append(result[column])
+                    writer.writerow(row)
+
+
     def GetHistoricalData(self):
         """
         * Get historical data for all tickers over past year.
         """
-        for ticker in self.Tickers:
-            pass
 
+        pass
+    def __GetTweetsPrev(self):
+        for searchTerm in results:
+            if len(results[searchTerm]) > 0:
+                for dateKey in results[searchTerm]:
+                    tweets = results[searchTerm][dateKey][0]
+                    sub = results[searchTerm][dateKey][1]
+                    for tweet in tweets:
+                        insertValues['CorpID'].append(corpID)
+                        insertValues['SearchTerm'].append(searchTerm)
+                        insertValues['User'].append(tweet.username)
+                        insertValues['Date'].append(tweet.date.strftime('%Y-%m-%d'))
+                        insertValues['Tweet'].append(MYSQLDatabase.RemoveInvalidChars(tweet.text))
+                        insertValues['SubNum'].append(sub)
+                db.InsertInChunks(table, insertValues, 50)
+                gc.collect()
+        
     ########################
     # Private Helpers:
     ########################
+    def __FilterAndSampleSearchTerms(self, existingSearchTerms, newSearchTerms, sampleSize):
+        """
+        * Filter out new searchterms to query with based upon existing search
+        terms.
+        """
+        output = []
+        # Filter out already sampled search terms, simple words and 
+        for term in newSearchTerms:
+            val = term[0].lower()
+            if len(val) > 2 and val not in existingSearchTerms and val not in SeminarProject.__stopWords\
+                and term[1] <= self.StartDate.date():
+                output.append(term)
+        # Randomly sample:
+        sampleSize = min(len(output), sampleSize - len(existingSearchTerms.keys()))
+        indices = choose(range(0, len(output)), sampleSize)
+        return [output[i] for i in indices]
+    
     def __DownloadStopWords(self):
         """
         * Download stopwords if necessary.
@@ -319,7 +368,7 @@ class SeminarProject(object):
                     if unassignedMatch.search(sector):
                         continue
                     # If hit another share class for same company, then accumulate the weight in the index:
-                    if name in nameToTicker.keys():
+                    if name in nameToTicker:
                         origTicker = nameToTicker[name]
                         tickers[origTicker] = (name, sector, str(float(weight) + float(tickers[origTicker][2])))
                     else:

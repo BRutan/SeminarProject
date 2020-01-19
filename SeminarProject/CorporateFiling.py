@@ -103,11 +103,11 @@ class CorporateFiling(object):
         self.__ticker = ticker
         self.__type = CorporateFiling.__types[type]
         self.__corpName = ''
-        if 'corpName' in args.keys():
+        if 'corpName' in args:
             self.__corpName = args[corpName]
         hasArg = False
         # Pull tags from html file if provided:
-        if 'htmlPath' in args.keys():
+        if 'htmlPath' in args:
             if not isinstance(args['htmlPath'], str):
                 errMsgs.append('htmlPath must be a string.')
             elif not os.path.exists(args['htmlPath']):
@@ -118,7 +118,7 @@ class CorporateFiling(object):
                 hasArg = True
                 self.__ExtractData(type, steps, htmlPath=args['htmlPath'])
         # Pull document from SEC Edgar website if document date was provided:
-        if not hasArg and 'date' in args.keys():
+        if not hasArg and 'date' in args:
             if isinstance(args['date'], str):
                 args['date'] = datetime.strptime(args['date'], '%Y%m%d')
             if not isinstance(args['date'], datetime):
@@ -126,7 +126,7 @@ class CorporateFiling(object):
             else:
                 hasArg = True
                 self.__ExtractData(type, steps, date=args['date'])
-        if not hasArg and 'customDocPath' in args.keys():
+        if not hasArg and 'customDocPath' in args:
             if not isinstance(args['customDocPath'], str):
                 errMsgs.append('customDocPath must be a string.')
             elif not os.path.exists(args['customDocPath']):
@@ -383,7 +383,7 @@ class CorporateFiling(object):
             for item in uniqueItems:
                 currRow = [item]
                 for period in periods:
-                    if item not in self.Financials[period].keys():
+                    if item not in self.Financials[period]:
                         currRow.append('NULL')
                     else:
                         currRow.append(str(self.Financials[period][item]))
@@ -775,7 +775,7 @@ class SubDocument(object):
                 # Get the line item name, period, and convert to appropriate format:
                 lineItem = tag.name[tag.name.find(':') + 1:]
                 period = SubDocument.__periodPattern.search(tag['contextref'])[0]
-                if period not in self.__financials.keys():
+                if period not in self.__financials:
                     self.__financials[period] = {}
                 self.__financials[period][lineItem] = int(text)
 
@@ -1526,13 +1526,13 @@ class SoupTesting(object):
                 firstIndex = index
                 lastIndex = chars.index('>', firstIndex)
                 tagStr = ''.join(chars[firstIndex:lastIndex + 1])
-                if isinstance(tagName,str) and tagRE.match(tagStr) and tagStr not in uniqueElems.keys():
+                if isinstance(tagName,str) and tagRE.match(tagStr) and tagStr not in uniqueElems:
                     uniqueElems[tagStr] = 0
-                elif isinstance(tagName, (tuple, list)) and [tagRE.match(tagStr) for tagRE in tagRES] and tagStr not in uniqueElems.keys():
+                elif isinstance(tagName, (tuple, list)) and [tagRE.match(tagStr) for tagRE in tagRES] and tagStr not in uniqueElems:
                     uniqueElems[tagStr] = 0    
-                elif not tagName and tagStr not in uniqueElems.keys():
+                elif not tagName and tagStr not in uniqueElems:
                     uniqueElems[tagStr] = 0
-                if tagStr in uniqueElems.keys():
+                if tagStr in uniqueElems:
                     uniqueElems[tagStr] += 1
                 index = lastIndex + 1
         except Exception:

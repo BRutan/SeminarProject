@@ -233,7 +233,7 @@ class MYSQLDatabase(object):
             for index in range(0, len(rawColTokens)):
                 if index + 2 < len(rawColTokens) and rawColTokens[index + 1] == 'as':
                     columnTokens[rawColTokens[index + 2]] = True
-                elif rawColTokens[index] != 'as' and rawColTokens[index] not in columnTokens.keys():
+                elif rawColTokens[index] != 'as' and rawColTokens[index] not in columnTokens:
                     columnTokens[rawColTokens[index]] = True
             columnTokens = list(columnTokens.keys())
             #columnTokens = [token for token in tokens[tokens.index("select") + 1: fromIndex] if token != 'as']
@@ -252,7 +252,7 @@ class MYSQLDatabase(object):
             tableNames = []
             tableAreaStop = []
             for index, token in enumerate(tokens, 0):
-                if token in MYSQLDatabase.__tableTokenStop.keys():
+                if token in MYSQLDatabase.__tableTokenStop:
                     tableAreaStop.append(index)
             tableAreaStop.append(len(tokens) - 1)
             tableAreaStop = min(tableAreaStop)
@@ -300,7 +300,7 @@ class MYSQLDatabase(object):
         if not isinstance(chunkSize, int) and not isinstance(chunkSize, float):
             errMsgs.append('chunkSize must be numeric.')
         if not isinstance(skipExceptions, bool):
-            errMsgs.append('skipExceptions must be boolean')
+            errMsgs.append('skipExceptions must be boolean.')
         if len(errMsgs) > 0:
             raise Exception('\n'.join(errMsgs))
 
@@ -413,7 +413,7 @@ class MYSQLDatabase(object):
             errMsgs.append("query must be a select statement.")
         if schema and not isinstance(schema, str):
             errMsgs.append("schema must be a string if specified.")
-        elif schema not in self.__schemas.keys():
+        elif schema not in self.__schemas:
             errMsgs.append("schema does not exist in database.")
         if isinstance(csvPath, str) and os.path.exists(csvPath):
             errMsgs.append("csv at csvPath already exists.")
@@ -520,12 +520,12 @@ class MYSQLDatabase(object):
         tableName = tableName.lower()
         schema = schema.lower()
         errMsgs = []
-        if schema not in self.__schemas.keys():
+        if schema not in self.__schemas:
             errMsgs.append("Schema does not exist yet in database (please create with CreateSchema()).")
         # Ensure that schema exists, passed table does/does not exist (depending on tableExists):
-        if tableExists and not tableName in self.__tables.keys():
+        if tableExists and not tableName in self.__tables:
             errMsgs.append("Table already exists in database.")
-        elif not tableExists and tableName in self.__tables.keys():
+        elif not tableExists and tableName in self.__tables:
             errMsgs.append("Table already exists in schema.")
 
         return errMsgs
@@ -538,7 +538,7 @@ class MYSQLDatabase(object):
         parenthIndex = columnType.find('(')
         parenthIndex = len(columnType) if parenthIndex == -1 else parenthIndex
         columnType = columnType[0 : parenthIndex]
-        if columnType in MYSQLDatabase.__TypeWrapMap.keys():
+        if columnType in MYSQLDatabase.__TypeWrapMap:
             return MYSQLDatabase.__TypeWrapMap[columnType]
         else:
             return ''

@@ -22,6 +22,7 @@ class SentimentAnalyzer(object):
         Inputs:
         * data: Dictionary containing text to analyze. Requires
         a primary key column to map the sentiment to (ex: tweet ID).
+        * pKey: Key to use as primary key for returned sentiments mapping.
         * textColumn: String denoting column name in data dictionary
         associated with text to analyze.
         """

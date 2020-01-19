@@ -46,7 +46,7 @@ class TweetPuller(object):
         startDate = args['since']
         endDate = args['until']
         
-        if 'termSampleSize' in args.keys():
+        if 'termSampleSize' in args:
             terms = choose(args['searchTerms'], args['termSampleSize'])
         else:
             terms = args['searchTerms']
@@ -57,7 +57,7 @@ class TweetPuller(object):
             results[term] = []
             sub = subs[termNum]
             _args['search'] = term
-            for day in range(1, numDays + 1):
+            for day in range(1, numDays + 1, 5):
                 _args['start'] = (startDate + datetime.timedelta(days = day)).strftime('%Y-%m-%d')
                 _args['until'] = (startDate + datetime.timedelta(days = day - 1)).strftime('%Y-%m-%d')
                 try:

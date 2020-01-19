@@ -73,13 +73,13 @@ class BrandQuery(object):
             cleanedSubs[cleaned] = True
             cleanedToSub[cleaned] = sub
         # Enter subs to search for into search box:
-        subs = ', '.join([sub for sub in list(subsidiaries.keys())])
+        subs = ', '.join([sub for sub in subsidiaries.keys()])
         self.__inputBox.send_keys(subs)
         self.__inputBox.send_keys(Keys.RETURN)
         self.__resultsTable = self.__driver.find_element_by_xpath('//*[@id="results"]')
         # Extract all rows from grid:
         pageNum = 1
-        while pageNum < 1000:
+        while pageNum < 300:
             try:
                 soup = Soup(self.__driver.page_source, 'lxml')    
                 table = soup.find('div', {'id' : 'results'})
@@ -90,9 +90,9 @@ class BrandQuery(object):
                         holder = row.find('td', { 'aria-describedby' : 'gridForsearch_pane_HOL' })
                         if holder:
                             holderName = re.sub('[^a-z]', '', unidecode(holder.text).strip().lower())
-                            if holderName in cleanedSubs.keys():
+                            if holderName in cleanedSubs:
                                 brand = row.find('td', { 'aria-describedby' : 'gridForsearch_pane_BRAND'}).text.strip()
-                                if brand not in brands.keys():
+                                if brand not in brands:
                                     # Store date filed, holder:
                                     brands[brand] = (unidecode(row.find('td', {'aria-describedby' : 'gridForsearch_pane_AD'}).text).strip(), cleanedToSub[holderName])
                 # Move to the next page:
@@ -100,7 +100,7 @@ class BrandQuery(object):
                 self.__nextPageButton.click()
                 pageNum += 1
                 # Exit if pulled over certain number of brands or passed through large number of pages:
-                if len(brands.keys()) > 600 or pageNum > 300:
+                if len(brands.keys()) > 600:
                     return brands
             except:
                 # Testing:
@@ -215,9 +215,9 @@ class SubsidiaryQuery(object):
                 data = grid.find_all('a')
                 for point in data:
                     text = unidecode(point.text).strip()
-                    if text not in subs.keys():
+                    if text not in subs:
                         subs[text] = True
-                self.__results = [val for val in list(subs.keys()) if val.strip()]
+                self.__results = [val for val in subs.keys() if val.strip()]
                 # Clean invalid characters:
                 for row in range(0, len(self.__results)):
                     self.__results[row] = re.sub('(\#|\(|\)|\*|\"|\')', '', self.__results[row])
