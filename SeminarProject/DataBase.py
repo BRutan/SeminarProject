@@ -6,6 +6,7 @@
 # library, capable of performing all DML/DDL/DCL functionality. 
 
 import csv
+from datetime import datetime, date
 import re
 import os
 import string
@@ -217,59 +218,69 @@ class MYSQLDatabase(object):
             connect.commit()
         # Return results if expecting any.
         if getResults:
-            # Return nothing if a select statement wasn't entered:
+            # Return empty dictionary if a select statement wasn't entered:
             if "select" not in query:
-                return None
+                return {}
             rawResults = cursor.fetchall()
-            # Output results as dictionary mapping column name to value.
-            # Extract table name and selected columns from select stmt:
             # Remove INNER/OUTER reserved words:
             tokens = [token.strip(MYSQLDatabase.__stripPunct) if not MYSQLDatabase.__funcSignature.match(token) else token for token in str.split(query, ' ')]
             tokens = list(filter(lambda a : not a in MYSQLDatabase.__selectStmtFilter.keys(), tokens))
             fromIndex = tokens.index("from")
-            columnTokens = {}
-            # Rename column names to aliases for output:
-            rawColTokens = tokens[tokens.index("select") + 1: fromIndex]
-            for index in range(0, len(rawColTokens)):
-                if index + 2 < len(rawColTokens) and rawColTokens[index + 1] == 'as':
-                    columnTokens[rawColTokens[index + 2]] = True
-                elif rawColTokens[index] != 'as' and rawColTokens[index] not in columnTokens:
-                    columnTokens[rawColTokens[index]] = True
-            columnTokens = list(columnTokens.keys())
-            #columnTokens = [token for token in tokens[tokens.index("select") + 1: fromIndex] if token != 'as']
-            aliasToTable = {}
-            # If join was performed, table aliases must have been used. 
-            # Rename <Alias>.<ColumnName> to <Table>.<ColumnName>:
-            index = fromIndex
-            while 'as' in tokens[index : len(tokens)]:
-                # We assume table name appears to immediate left of AS, alias to right:
-                index += tokens[index : len(tokens)].index("as")
-                tableName = tokens[index - 1]
-                alias = tokens[index + 1]
-                aliasToTable[alias] = tableName
-                index += 1
-            # Get table name from query:
-            tableNames = []
-            tableAreaStop = []
-            for index, token in enumerate(tokens, 0):
-                if token in MYSQLDatabase.__tableTokenStop:
-                    tableAreaStop.append(index)
-            tableAreaStop.append(len(tokens) - 1)
-            tableAreaStop = min(tableAreaStop)
             output = {}
-            index = 0
-            # Replace aliases in column names with full table name:
-            columnNames = []
-            for column in columnTokens:
-                index = column.find('.')
-                if index > -1:
-                    alias = column[0:index]
-                    validCol = column.replace(alias + '.', aliasToTable[alias] + '.')
-                    columnNames.append(validCol)
-                    output[validCol] = []
-                else:
+            # Output results as dictionary mapping column name to value.
+            if '*' not in query:
+                # Extract selected columns from select stmt:
+                columnTokens = {}
+                # If join was performed, table aliases must have been used. 
+                # Rename <Alias>.<ColumnName> to <Table>.<ColumnName>:
+                rawColTokens = tokens[tokens.index("select") + 1: fromIndex]
+                for index in range(0, len(rawColTokens)):
+                    if index + 2 < len(rawColTokens) and rawColTokens[index + 1] == 'as':
+                        columnTokens[rawColTokens[index + 2]] = True
+                    elif rawColTokens[index] != 'as' and rawColTokens[index] not in columnTokens:
+                        columnTokens[rawColTokens[index]] = True
+                columnTokens = list(columnTokens.keys())
+                aliasToTable = {}
+                index = fromIndex
+                while 'as' in tokens[index : len(tokens)]:
+                    # We assume table name appears to immediate left of AS, alias to right:
+                    index += tokens[index : len(tokens)].index("as")
+                    tableName = tokens[index - 1]
+                    alias = tokens[index + 1]
+                    aliasToTable[alias] = tableName
+                    index += 1
+                # Get table name from query:
+                tableNames = []
+                tableAreaStop = []
+                for index, token in enumerate(tokens, 0):
+                    if token in MYSQLDatabase.__tableTokenStop:
+                        tableAreaStop.append(index)
+                tableAreaStop.append(len(tokens) - 1)
+                tableAreaStop = min(tableAreaStop)
+                index = 0
+                # Replace aliases in column names with full table name:
+                columnNames = []
+                for column in columnTokens:
+                    index = column.find('.')
+                    if index > -1:
+                        alias = column[0:index]
+                        validCol = column.replace(alias + '.', aliasToTable[alias] + '.')
+                        columnNames.append(validCol)
+                        output[validCol] = []
+                    else:
+                        output[column] = []
+                        columnNames.append(column)
+            else:
+                # Selecting all columns: set output dictionary to map using all columns in table.
+                tableIndex = fromIndex + 1
+                for index, token in enumerate(tokens, 0):
+                    if token in MYSQLDatabase.__tableTokenStop:
+                        tableIndex = index
+                        break
+                table = tokens[tableIndex]
+                columnNames = list(self.__tables[table].keys())
+                for column in columnNames:
                     output[column] = []
-                    columnNames.append(column)
 
             # Output data as dictionary mapping { ColName -> [Values] }:
             for result in rawResults:
@@ -396,15 +407,20 @@ class MYSQLDatabase(object):
         connect.commit()
         cursor.close()
 
-    def PrintSelectToCSV(self, query, csvPath, schema = None):
+    def PrintSelectToCSV(self, query, csvPath, schema = None, unicode = False):
         """
         * Print select statement to specified CSV.
         """
         errMsgs = []
         if not schema:
             schema = self.ActiveSchema
+        
+        schema = schema.lower()
+
         if not isinstance(csvPath,str):
             errMsgs.append("csvPath must be a string.")
+        elif '.' not in csvPath:
+            csvPath += '.csv'
         elif '.csv' not in csvPath:
             csvPath = csvPath[0:csvPath.rfind('.')] + '.csv'
         if not isinstance(query, str):
@@ -417,6 +433,8 @@ class MYSQLDatabase(object):
             errMsgs.append("schema does not exist in database.")
         if isinstance(csvPath, str) and os.path.exists(csvPath):
             errMsgs.append("csv at csvPath already exists.")
+        if not isinstance(unicode, bool):
+            errMsgs.append("unicode must be a boolean.")
 
         if len(errMsgs) > 0:
             msg = '\n'.join(errMsgs)
@@ -432,11 +450,24 @@ class MYSQLDatabase(object):
                 columnHeaders = list(data.keys())
                 writer.writerow(columnHeaders)
                 rowLen = len(data[columnHeaders[0]])
-                for row in range(0, rowLen):
-                    currRow = []
-                    for column in data.keys():
-                        currRow.append(data[column][row])
-                    writer.writerow(currRow)
+                if not unicode:
+                    for row in range(0, rowLen):
+                        currRow = []
+                        for column in data.keys():
+                            if isinstance(data[column][row], (date, datetime)):
+                                currRow.append(data[column][row].strftime('%Y-%m-%d'))
+                            else:
+                                currRow.append(str(data[column][row]))
+                        writer.writerow(currRow)
+                else:
+                    for row in range(0, rowLen):
+                        currRow = []
+                        for column in data.keys():
+                            if isinstance(data[column][row], (date, datetime)):
+                                currRow.append(data[column][row].strftime('%Y-%m-%d'))
+                            else:
+                                currRow.append(str(data[column][row]).encode('utf8'))
+                        writer.writerow(currRow)
             return True
         else:
             return False
@@ -446,6 +477,7 @@ class MYSQLDatabase(object):
         * Return True if table exists in current schema.
         """
         return tableName.lower() in self.__tables.keys()
+
 
     #######################
     # Accessors:
@@ -569,3 +601,20 @@ class MYSQLDatabase(object):
         * Clean all non-unicode characters and '#'.
         """
         return ''.join([ch if ord(ch) < 128 and ord(ch) != 35 else ' ' for ch in str])
+
+
+
+
+class ResultSet(object):
+    """
+    * Result from SELECT statement.
+    """
+    def __init__(self):
+        self.__rowCount = 0
+
+    @property
+    def RowCount(self):
+        return self.__rowCount
+    @property
+    def Columns(self):
+        return self.__data

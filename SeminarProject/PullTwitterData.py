@@ -9,6 +9,8 @@ import gc
 from datetime import datetime, date, timedelta
 import got3 as got
 
+__all__ = ['TwitterPuller']
+
 class TwitterPuller(object):
     """
     * Pulls in tweets using keywords.
@@ -124,54 +126,6 @@ class TwitterPuller(object):
         if not pulled_corp_searches:
             pulled_corp_searches = {}
 
-
-
-    
-class DecomposedStatuses(object):
-    """
-    * Object contains list of mapped object statuses.
-    """
-    __validOptions = { 'user': 0, 'text' : 0 }
-    def __init__(self, *options):
-        """
-        * Initialize new decomposed status object.
-        """
-        self.Results = []
-        # Ensure that all options were valid:
-        # Determine all parameters to pull:
-        self.__options = []
-        for option in options:
-            if option in __validOptions:
-                self.__options.append(option)
-
-    def ConvertAll(self, statuses):
-        """
-        * Convert list of statuses into list of list of requested
-        status members.
-        """
-        output = []
-        for status in status:
-            convStatus = []
-            for option in self.__options:
-                convStatus.append(self.__statusMap(status, option))
-            output.append(convStatus)
-        
-        return output
-
-    ###############################
-    # Private Helpers:
-    ###############################
-    @staticmethod
-    def __statusMap(status, member):
-        """
-        * Request member from object.
-        """
-        if member == 'user':
-            return status.user
-        if member == 'nothing':
-            return None
-        if member == 'text':
-            return status.text
 
 
 class APICallExceeded(Exception):

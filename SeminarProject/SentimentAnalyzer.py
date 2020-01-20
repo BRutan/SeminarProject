@@ -15,12 +15,25 @@ class SentimentAnalyzer(object):
     """
     * Class performs sentiment analysis on tweets.
     """
-    def CalculateSentiments(self, data, pKey, textColumn):
+    @staticmethod
+    def CalculateSentiment(text):
+        """
+        * Calculate sentiment score for passed text.
+        """
+        blob = TextBlob(text)
+        score = 0
+        for sentence in blob.sentences:
+            score += sentence.sentiment.polarity
+        
+        return score
+
+    @staticmethod
+    def CalculateSentiments(data, pKey, textColumn):
         """
         * Calculate sentiment score for each text element
         in data.
         Inputs:
-        * data: Dictionary containing text to analyze. Requires
+        * data: Dictionary containing text to analyze.
         a primary key column to map the sentiment to (ex: tweet ID).
         * pKey: Key to use as primary key for returned sentiments mapping.
         * textColumn: String denoting column name in data dictionary
