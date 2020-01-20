@@ -46,4 +46,4 @@ if __name__ == '__main__':
         seminar.GetTweets(args.ticker)
     else:
         seminar.ExecuteAll()
-        
+       
