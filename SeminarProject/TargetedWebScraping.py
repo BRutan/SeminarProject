@@ -147,9 +147,10 @@ class BrandQuery(object):
             self.__driver.quit()
             self.__driver = None
 
-    def __StartBrowser(self, restartCount = None, pageNum = None, searchTerm = None):
+    def __StartBrowser(self, restartCount = None, pageNum = None, searchTerm = None, evadeDetection = False):
         """
-        * Open browser window until object is terminated.
+        * Open browser window until object is terminated. Put evadeDetection = True if want to attempt to evade
+        automation detection.
         """
         if self.__driver:
             self.__EndSession()
@@ -159,14 +160,16 @@ class BrandQuery(object):
         #    self.__driver = webdriver.FireFox(executable_path=BrandQuery.__firefoxPath)
         self.__driver = webdriver.Chrome(executable_path=BrandQuery.__chromePath)
         # Open random number of tabs:
-        #numPages = int(random.uniform(1, 30))
-        #for val in range(0, numPages):
-        #    self.__driver.execute_script("window.open('https://www.google.com');")
-        #self.__driver.execute_script(''.join(["window.open('", BrandQuery.__site, "');"]))
+        if evadeDetection:
+            numPages = int(random.uniform(1, 30))
+            for val in range(0, numPages):
+                self.__driver.execute_script("window.open('https://www.google.com');")
+        self.__driver.execute_script(''.join(["window.open('", BrandQuery.__site, "');"]))
         self.__driver.get(BrandQuery.__site)
         try:
             time.sleep(3)
-            #time.sleep(random.uniform(0, 4))
+            if evadeDetection:
+                time.sleep(random.uniform(0, 4))
             self.__namePane = self.__driver.find_element_by_xpath(BrandQuery.__namePanePath)
             self.__namePane.click()
             self.__inputBox = self.__driver.find_element_by_xpath(BrandQuery.__inputBoxPath)
@@ -179,8 +182,6 @@ class BrandQuery(object):
                 self.__inputBox.send_keys(Keys.RETURN)
                 self.__resultsTable = self.__driver.find_element_by_xpath('//*[@id="results"]')
         except:
-            # Testing:
-            #self.__PrintAttributes(self.__WebElements)
             self.__EndSession()
             raise Exception('WIPO website has kicked you off for detecting automation. Try again later.')
 

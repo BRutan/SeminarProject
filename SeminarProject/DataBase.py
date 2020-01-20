@@ -220,8 +220,10 @@ class MYSQLDatabase(object):
         if getResults:
             # Return empty dictionary if a select statement wasn't entered:
             if "select" not in query:
-                return {}
+                return None
             rawResults = cursor.fetchall()
+            if not rawResults:
+                return None
             # Remove INNER/OUTER reserved words:
             tokens = [token.strip(MYSQLDatabase.__stripPunct) if not MYSQLDatabase.__funcSignature.match(token) else token for token in str.split(query, ' ')]
             tokens = list(filter(lambda a : not a in MYSQLDatabase.__selectStmtFilter.keys(), tokens))

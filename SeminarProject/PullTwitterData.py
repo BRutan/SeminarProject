@@ -43,6 +43,8 @@ class TwitterPuller(object):
         numDays = (args['until'] - args['since']).days
         tweetCriteria = got.manager.TweetCriteria()
         tweetCriteria = tweetCriteria.setMaxTweets(numTweets)
+        tweetCriteria = tweetCriteria.setLang('en')
+        tweetCriteria = tweetCriteria.setTopTweets(True)
         currDate = args['since']
         tweetCriteria = tweetCriteria.setQuerySearch(searchTerm)
         dateStep = stepSize
@@ -65,8 +67,8 @@ class TwitterPuller(object):
                         insertValues['Tweet'].append(MYSQLDatabase.RemoveInvalidChars(tweet.text))
                         insertValues['SubNum'].append(subNum)
                     db.InsertInChunks(tableName, insertValues, 10, skipExceptions = True)
-            except Exception as ex:
-                1 == 1
+            except BaseException:
+                pass
             currDate = nextDate
             dateStep += stepSize
 

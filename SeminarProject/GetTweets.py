@@ -47,7 +47,7 @@ class TweetPuller(object):
         endDate = args['until']
         
         if 'termSampleSize' in args:
-            terms = choose(args['searchTerms'], args['termSampleSize'])
+            terms = choose(args['searchTerms'], args['termSampleSize'], replace=False)
         else:
             terms = args['searchTerms']
 
