@@ -251,9 +251,9 @@ class SeminarProject(object):
                 _subnums = []
         # Pull all brands from WIPO database website:
         if len(self.TickerToBrands.keys()) < len(self.Tickers.keys()):
-            query = BrandQuery()
             for ticker in self.Tickers.keys() if not _ticker else [_ticker] if isinstance(_ticker, str) else _ticker:
                 if ticker not in self.TickerToBrands:
+                    query = BrandQuery()
                     insertValues = {}
                     subsidiaries = self.TickerToSubs[ticker]
                     brands = query.PullBrands(subsidiaries)

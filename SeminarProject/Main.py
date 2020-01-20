@@ -34,7 +34,6 @@ if __name__ == '__main__':
     else:
         host = args.host
 
-    #db = DataBase.MYSQLDatabase("root", "Correlation$", "127.0.0.1", "Research_Seminar_Project")
     db = DataBase.MYSQLDatabase(args.username, args.pw, host, args.schema)
     seminar = SeminarProject(startDate, endDate, args.tickerpath, db)
 
