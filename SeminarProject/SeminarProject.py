@@ -21,11 +21,23 @@ from PullTwitterData import TwitterPuller
 
 class SeminarProject(object):
     """
-    * Key objects required for performing seminar project.
+    * Key objects/methods required for performing seminar project.
     """
     __utfSupport = 'CHARACTER SET utf8 COLLATE utf8_unicode_ci'
     __cacheKeySig = "{Corp:%s}{Brand:%s}"
     __stopWords = { re.sub('[^a-z]', '', word.lower()) : True for word in set(stopwords.words('english')) }
+    CorpTableColumns = {"CorpID" : ["int", True, ""], "Name" : ["text", False, ""], 
+                                 "Ticker" : ["varchar(5)", False, ""], "Industry" : ["text", False, ""], "Weight" : ["float", False, ""] }
+    CorpBrandTableColumns = {"CorpID" : ["int", False, "Corporations(CorpID)"], "Brands" : ["text " + SeminarProject.__utfSupport, False, ""], 
+                                    "AppDate" : ["Date", False, ""], "SubNum" : ["int", False, "Subsidiaries(Number)"]}
+    SubsidariesTableColumns = {"Number" : ["int", True, ""], "CorpID" : ["int", False, "Corporations(CorpID)"], "Subsidiaries" : ["text", False, ""]}
+    DataColumns = { "CorpID" : ["int", False, "Corporations(CorpID)"], "SearchTerm" : ["text", False, ""], 
+                    "User" : ["text " + SeminarProject.__utfSupport, False, ''], 
+                    "Date" : ["date", False, ""], 
+                    "Tweet" : ["text " + SeminarProject.__utfSupport, False, ''], 
+                    "Retweets" : ["int", False, ""], 
+                    "SubNum" : ["int", False, "Subsidiaries(Number)"] }
+    HistoricalPriceCols = { 'CorpID' : ['int', False, 'Corporations(CorpID)'], 'Adj_Close' : ['float', False, ''], 'Date' : ['Date', False, ''] }
     def __init__(self, startDate, endDate, tickerPath, database):
         """
         * Initialize new object.
@@ -59,14 +71,14 @@ class SeminarProject(object):
     #######################
     # Interface Methods:
     #######################
-    def ExecuteAll(self):
+    def ExecuteAll(self, toptweets = False):
         """
         * Execute all steps in sequential order.
         """
         self.CreateTables()
         self.GetSubsidiaries()
         self.GetBrands()
-        self.GetTweets()
+        self.GetTweets(toptweets = toptweets)
         
     def CreateTables(self, ticker = None):
         """
@@ -119,11 +131,29 @@ class SeminarProject(object):
         if not db.TableExists("CorporateBrands"):
             db.CreateTable("CorporateBrands", self.CorpBrandTableColumns, schema = "Research_Seminar_Project")
 
-        if _ticker:
-            # Add ticker to Corporations table if not already present:
-            results = db.ExecuteQuery("SELECT * FROM Corporations", getResults = True)
-            if results and _ticker not in results['ticker']:
-                corpID = max(results['corpid']) + 1
+        #if _ticker:
+        #    # Add ticker to Corporations table if not already present:
+        #    results = db.ExecuteQuery("SELECT * FROM Corporations", getResults = True)
+        #    insertVals = { 'corpid' : [], 'ticker' : [], 'name' : [], 'industry' : [] }
+        #    if isinstance(_ticker, str) and results and _ticker not in results['ticker']:
+        #        corpID = max(results['corpid']) + 1
+        #        insertVals['corpid'] = corpID
+        #        insertVals['ticker'] = ticker
+        #        insertVals['name'] = name
+        #        insertVals['industry'] = industry
+        #        db.InsertValues('corporations', insertVals)
+        #        self.Tickers[_ticker] = (name, industry, 0)
+        #    elif isinstance(_ticker, list) and results:
+        #        corpID = max(results['corpid']) + 1
+        #        tickers = { result : True for result in results['ticker'] }
+        #        for ticker in _ticker:
+        #            if ticker not in tickers:
+        #                insertVals['corpid'].append(corpID)
+        #                insertVals['ticker'].append(ticker)
+        #                insertVals['name'].append(name)
+        #                insertVals['industry'].append(industry)
+        #                self.Tickers[_ticker] = (name, industry, 0)
+        #        db.InsertValues('corporations', insertVals)
                 
         # Create all Corporations tables:
         tweetColumns = self.DataColumns
@@ -274,7 +304,7 @@ class SeminarProject(object):
                         self.TickerToBrands[ticker][1].extend(insertValues['appdate'])
                         self.TickerToBrands[ticker][2].extend(insertValues['subnum'])
 
-    def GetTweets(self, ticker = None):
+    def GetTweets(self, ticker = None, toptweets = False):
         """
         * Randomly sample all tweets and insert into associated table in schema.
         """
@@ -319,44 +349,6 @@ class SeminarProject(object):
                 puller.PullTweetsAndInsert(args, corpID, sub, table, term, db, numTweets = args['interDaySampleSize'])
                 tickersToSearchTerms[ticker][term] = True
 
-    def InsertRecordsIntoDB(self):
-        files = ['Corporations.csv', 'CorporateBrands.csv']
-
-           
-    def OutputSentimentScoreReport(self, ticker):
-        """
-        * Calculate sentiment scores using stored tweets, output to local csv file.
-        """
-        table = self.TickerToTweetTable[ticker]
-        fileName = ''.join([ticker, '_scores.csv'])
-        query = ['SELECT A.searchterm, A.user, A.date, A.tweet, A.retweets, B.subsidiaries FROM ']
-        query.append(table)
-        query.append(' AS A INNER JOIN subsidiaries AS B ON A.SubNum = B.Number;')
-        query = ''.join(query)
-        results = self.DB.ExecuteQuery(query, getResults = True)
-        rowCount = len(results[list(results.keys())[0]])
-        if rowCount > 0:
-            with open(fileName, 'w', newline='') as f:
-                writer = csv.writer(f)
-                columns = [header for header in results.keys() if '.tweet' not in header]
-                formattedColumns = [header[header.index('.') + 1: len(header)] for header in columns]
-                formattedColumns.append('Polarity Score')
-                columns.append('PS')
-                text = results[table.lower() + '.tweet']
-                writer.writerow(formattedColumns)
-                for row in range(0, rowCount):
-                    rowText = []
-                    for colNum in range(0, len(columns)):
-                        if colNum < len(columns) - 1:
-                            column = columns[colNum]
-                            if isinstance(results[column][row], date):
-                                val = results[column][row].strftime('%Y-%m-%d')
-                            else:
-                                val = results[column][row]
-                            rowText.append(val)
-                        else:
-                            rowText.append(SentimentAnalyzer.CalculateSentiment(text[row]))
-                    writer.writerow(rowText)
 
     def GetHistoricalData(self):
         """

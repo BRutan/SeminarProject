@@ -22,28 +22,34 @@ if __name__ == '__main__':
     # Optional arguments:
     parser.add_argument('--host', type = str, help="IP Address of MYSQL instance.")
     parser.add_argument('--ticker', type = str, help="Provide if only want to pull data for single ticker.")
+    parser.add_argument('--toptweets', action='store_true', help='Provide if want to pull top tweets only.')
     args = parser.parse_args()
+    errs = []
     try:
         startDate = datetime.strptime(args.startdate, '%Y-%m-%d')
         endDate = datetime.strptime(args.enddate, '%Y-%m-%d')
     except:
-        raise Exception("Could not convert startDate or endDate to datetime.")
+        errs.append("Could not convert startDate or endDate to datetime.")
 
     if not args.host:
         host = "127.0.0.1"
     else:
-        host = args.host
+        host = args.host.strip()
+    try:
+        db = DataBase.MYSQLDatabase(args.username, args.pw, host, args.schema)
+    except:
+        errs.append('Could not connect to MYSQL database instance.')
+    # Raise exception if issues occurred with command line inputs:
+    if errs:
+        raise Exception('\n'.join(errs))
 
-    db = DataBase.MYSQLDatabase(args.username, args.pw, host, args.schema)
     seminar = SeminarProject(startDate, endDate, args.tickerpath, db)
 
     # Perform key steps for single ticker if was specified, else perform for all tickers listed in XLY_ALL_Holdings.csv:
     if args.ticker:
-        #tickers = ['F','HOG','GPC','LKQ','HRB','MCD','SBUX','MAR','YUM','HLT','RCL','LVS','CMG','CCL','MGM','DRI','WYNN','NCLH','DHI','LEN','GRMN','NVR','WHR','PHM','MHK','NWL','LEG','AMZN','BKNG','EBAY','EXPE','HAS','TGT','DG','DLTR','KSS','M','JWN','HD','LOW','TJX','ROST','ORLY','AZO','BBY','KMX','ULTA','TIF','AAP','TSCO','LB','GPS','NKE','VFC','TPR','PVH','RL','HBI','CPRI','UAA','UA']
         seminar.CreateTables(args.ticker)
         seminar.GetSubsidiaries(args.ticker)
         seminar.GetBrands(args.ticker)
-        seminar.GetTweets(args.ticker)
+        seminar.GetTweets(ticker = args.ticker, toptweets = args.toptweets)
     else:
-        seminar.ExecuteAll()
-       
+        seminar.ExecuteAll(args.toptweets)   
