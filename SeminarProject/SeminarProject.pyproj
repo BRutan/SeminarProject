@@ -4,7 +4,7 @@
     <SchemaVersion>2.0</SchemaVersion>
     <ProjectGuid>3b087734-5889-4d64-8158-eef5659fedd8</ProjectGuid>
     <ProjectHome>.</ProjectHome>
-    <StartupFile>Main.py</StartupFile>
+    <StartupFile>CustomSearchAndPull.py</StartupFile>
     <SearchPath>
     </SearchPath>
     <WorkingDirectory>.</WorkingDirectory>
@@ -47,7 +47,6 @@
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="DataBase.py" />
-    <Compile Include="HelperFunctions.py" />
     <Compile Include="Main.py" />
     <Compile Include="PullTwitterData.py" />
     <Compile Include="SeminarProject.py">
