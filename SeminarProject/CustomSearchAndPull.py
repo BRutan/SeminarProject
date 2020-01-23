@@ -12,20 +12,9 @@ import re
 from PullTwitterData import TwitterPuller
 from CorpDataPuller import DataPuller
 from SeminarProject import SeminarProject
+import sys
 
-def IsDate(string):
-    try:
-        return datetime.strptime(string, '%Y-%m-%d')
-    except:
-        raise argparse.ArgumentTypeError
-
-def IsPositive(val):
-    if val > 0:
-        return val
-    else:
-        raise argparse.ArgumentTypeError
-
-if __name__ == '__main__':
+def CustomSearchAndPull():
     # Get command line arguments:
     parser = argparse.ArgumentParser(prog='SeminarProject')
     parser.add_argument('username', type = str, help="Username for MYSQL instance.")
@@ -34,9 +23,9 @@ if __name__ == '__main__':
     parser.add_argument('ticker', type = str, help="Company ticker to pull data for.")
     parser.add_argument('startdate', type = IsDate, help="Start date for tweets and returns.")
     parser.add_argument('enddate', type = IsDate, help="End date for tweets and returns.")
-    parser.add_argument('searchterms', type = str, nargs = '+', help = 'One or more search terms for tweets.')
     parser.add_argument('interdaysamplesize', type = int, help = 'Number of tweets to pull per day (positive).')
     parser.add_argument('daystep', type = int, help = 'Day step between startdate and enddate (positive).')
+    parser.add_argument('searchterms', type = str, nargs = '+', help = 'One or more search terms for tweets.')
     # Optional arguments:
     parser.add_argument('--host', type = str, help="IP Address of MYSQL instance.")
     parser.add_argument('--toptweets', action = "store_true", help = "Include if want to pull in top tweets only.")
@@ -45,10 +34,15 @@ if __name__ == '__main__':
     valid_args = args[0]
     errs = []
 
-    # Check invalid arguments:
+    # Check if any unknown arguments were passed:
     if args[1]:
-        errs.append('')
-    
+        errs.append(''.join(['The following arguments are unknown: ', '\n'.join(args[1])]))
+
+    if errs:
+        raise Exception(''.join(errs))
+
+    args = args[0]
+
     if not args.host:
         host = "127.0.0.1"
     else:
@@ -72,20 +66,23 @@ if __name__ == '__main__':
         db.CreateTable(returnTable, SeminarProject.HistoricalPriceCols)
     # Insert ticker and company attributes into Corporations table:
     if not db.TableExists('corporations'):
-        db.CreateSchema('corporations', SeminarProject.CorpTableColumns)
-    results = db.ExecuteQuery('SELECT * FROM corporations;')
-    corpPuller = DataPuller()
+        db.CreateTable('corporations', SeminarProject.CorpTableColumns)
+    results = db.ExecuteQuery('SELECT * FROM corporations WHERE ticker = "' + ticker.upper() + '"', getResults = True)
     if results and ticker not in [_ticker.lower() for _ticker in results['ticker']]:
+        corpPuller = DataPuller()
         corpID = max(results['corpid']) + 1
-        attrs = corpPuller.GetAttributes(ticker, ['name', 'industry' ], startDate = args.startdate)
-        name = attrs['name']
-        industry = attrs['industry']
-        insertVals = {'corpid' : [corpId], 'name' : [name], 'ticker' : [ticker.upper()], 'industry' : [industry] }
+        # Testing:
+        name = 'Volkswagen Group'
+        industry = 'Automobiles'
+        #attrs = corpPuller.GetAttributes(ticker, ['name', 'industry_category' ], startDate = args.startdate)
+        #name = attrs['legal_name']
+        #industry = attrs['industry_category']
+        insertVals = {'corpid' : [corpID], 'name' : [name], 'ticker' : [ticker.upper()], 'industry' : [industry] }
         db.InsertValues('corporations', insertVals)
     elif results:
-        index = results['ticker'].index(ticker)
+        index = results['ticker'].index(ticker.upper())
         corpID = results['corpid'][index]
-
+    
     # Perform custom tweet pulling.
     puller = TwitterPuller()
     terms = args.searchterms
@@ -96,9 +93,21 @@ if __name__ == '__main__':
     pullArgs['until'] = args.enddate
 
     for term in terms:
-        puller.PullTweetsAndInsert(pullArgs, corpID, 0, tweetTable, term, db, args.toptweets, args.interdaysamplesize)
+        puller.PullTweetsAndInsert(pullArgs, corpID, 'NULL', tweetTable, term, db, args.toptweets, args.interdaysamplesize)
 
 
+def IsDate(string):
+    try:
+        return datetime.strptime(string, '%Y-%m-%d')
+    except:
+        raise argparse.ArgumentTypeError
 
+def IsPositive(val):
+    if val > 0:
+        return val
+    else:
+        raise argparse.ArgumentTypeError
 
+if __name__ == '__main__':
+    CustomSearchAndPull()
     

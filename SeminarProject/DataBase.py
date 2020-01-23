@@ -611,12 +611,32 @@ class ResultSet(object):
     """
     * Result from SELECT statement.
     """
-    def __init__(self):
-        self.__rowCount = 0
-
+    def __init__(self, query, rawResults):
+        self.__ExtractColumns(query)
+        self.__Convert(rawResults)
+    #################
+    # Properties:
+    #################
     @property
     def RowCount(self):
         return self.__rowCount
     @property
     def Columns(self):
         return self.__data
+
+    #################
+    # Interface Methods:
+    #################
+    def Print(self, filePath, columns = None):
+        """
+        * Print select statement to file
+        """
+        pass
+    #################
+    # Private Helpers:
+    #################
+    def __Convert(self, rawResults):
+        pass
+
+    def __ExtractColumns(self, query):
+        pass

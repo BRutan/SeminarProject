@@ -28,13 +28,13 @@ class SeminarProject(object):
     __stopWords = { re.sub('[^a-z]', '', word.lower()) : True for word in set(stopwords.words('english')) }
     CorpTableColumns = {"CorpID" : ["int", True, ""], "Name" : ["text", False, ""], 
                                  "Ticker" : ["varchar(5)", False, ""], "Industry" : ["text", False, ""], "Weight" : ["float", False, ""] }
-    CorpBrandTableColumns = {"CorpID" : ["int", False, "Corporations(CorpID)"], "Brands" : ["text " + SeminarProject.__utfSupport, False, ""], 
+    CorpBrandTableColumns = {"CorpID" : ["int", False, "Corporations(CorpID)"], "Brands" : ["text " + __utfSupport, False, ""], 
                                     "AppDate" : ["Date", False, ""], "SubNum" : ["int", False, "Subsidiaries(Number)"]}
     SubsidariesTableColumns = {"Number" : ["int", True, ""], "CorpID" : ["int", False, "Corporations(CorpID)"], "Subsidiaries" : ["text", False, ""]}
     DataColumns = { "CorpID" : ["int", False, "Corporations(CorpID)"], "SearchTerm" : ["text", False, ""], 
-                    "User" : ["text " + SeminarProject.__utfSupport, False, ''], 
+                    "User" : ["text " + __utfSupport, False, ''], 
                     "Date" : ["date", False, ""], 
-                    "Tweet" : ["text " + SeminarProject.__utfSupport, False, ''], 
+                    "Tweet" : ["text " + __utfSupport, False, ''], 
                     "Retweets" : ["int", False, ""], 
                     "SubNum" : ["int", False, "Subsidiaries(Number)"] }
     HistoricalPriceCols = { 'CorpID' : ['int', False, 'Corporations(CorpID)'], 'Adj_Close' : ['float', False, ''], 'Date' : ['Date', False, ''] }
