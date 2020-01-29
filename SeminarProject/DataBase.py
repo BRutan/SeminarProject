@@ -216,6 +216,10 @@ class MYSQLDatabase(object):
         # Commit transaction if requested:
         if shouldCommit:
             connect.commit()
+        if 'drop table' in query:
+            table = query[len('drop table ') : len(query)].strip(' ;')
+            del self.__tables[table]
+
         # Return results if expecting any.
         if getResults:
             # Return empty dictionary if a select statement wasn't entered:
@@ -345,8 +349,13 @@ class MYSQLDatabase(object):
                         currCols[col].append(columns[col][row])
                 self.InsertValues(tableName, currCols, schema)
                 row += 1
+    def CreateTemporaryTables(self, tableName, columns):
+        """
+        * Create temporary table.
+        """
+        pass
 
-    def InsertValues(self, tableName, columns, schema = None):
+    def InsertValues(self, tableName, columns, schema = None, skipChecks = False):
         """
         * Insert all values into the create database. 
         Inputs:
@@ -359,12 +368,15 @@ class MYSQLDatabase(object):
         # Validate function parameters:
         if not schema:
             schema = self.ActiveSchema
-        errMsgs = self.__CheckParams(tableName, schema, columns)
+        errMsgs = []
+        if not skipChecks:
+            errMsgs = self.__CheckParams(tableName, schema, columns)
         tableName = tableName.lower()
         if len(errMsgs) > 0:
             raise Exception('\n'.join(errMsgs))
         # Raise exception if schema and table do not exist:
-        errMsgs = self.__CheckDBObjectsExist(tableName, schema)
+        if not skipChecks:
+            errMsgs = self.__CheckDBObjectsExist(tableName, schema)
         if len(errMsgs) > 0:
             raise Exception('\n'.join(errMsgs))
 
@@ -558,7 +570,7 @@ class MYSQLDatabase(object):
             errMsgs.append("Schema does not exist yet in database (please create with CreateSchema()).")
         # Ensure that schema exists, passed table does/does not exist (depending on tableExists):
         if tableExists and not tableName in self.__tables:
-            errMsgs.append("Table already exists in database.")
+            errMsgs.append("Table does not exist in database.")
         elif not tableExists and tableName in self.__tables:
             errMsgs.append("Table already exists in schema.")
 

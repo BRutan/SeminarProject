@@ -67,17 +67,11 @@ def CustomSearchAndPull():
     # Insert ticker and company attributes into Corporations table:
     if not db.TableExists('corporations'):
         db.CreateTable('corporations', SeminarProject.CorpTableColumns)
-    results = db.ExecuteQuery('SELECT * FROM corporations WHERE ticker = "' + ticker.upper() + '"', getResults = True)
+    results = db.ExecuteQuery('SELECT * FROM corporations', getResults = True)
     if results and ticker not in [_ticker.lower() for _ticker in results['ticker']]:
         corpPuller = DataPuller()
         corpID = max(results['corpid']) + 1
-        # Testing:
-        name = 'Volkswagen Group'
-        industry = 'Automobiles'
-        #attrs = corpPuller.GetAttributes(ticker, ['name', 'industry_category' ], startDate = args.startdate)
-        #name = attrs['legal_name']
-        #industry = attrs['industry_category']
-        insertVals = {'corpid' : [corpID], 'name' : [name], 'ticker' : [ticker.upper()], 'industry' : [industry] }
+        insertVals = {'corpid' : [corpID], 'name' : ['NULL'], 'ticker' : [ticker.upper()], 'industry' : ['NULL'] }
         db.InsertValues('corporations', insertVals)
     elif results:
         index = results['ticker'].index(ticker.upper())
