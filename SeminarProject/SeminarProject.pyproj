@@ -4,7 +4,7 @@
     <SchemaVersion>2.0</SchemaVersion>
     <ProjectGuid>3b087734-5889-4d64-8158-eef5659fedd8</ProjectGuid>
     <ProjectHome>.</ProjectHome>
-    <StartupFile>CalculateSentimentScores.py</StartupFile>
+    <StartupFile>PullAllData.py</StartupFile>
     <SearchPath>
     </SearchPath>
     <WorkingDirectory>.</WorkingDirectory>
@@ -28,7 +28,10 @@
     <Compile Include="CalculateSentimentScores.py">
       <SubType>Code</SubType>
     </Compile>
-    <Compile Include="CustomSearchAndPull.py">
+    <Compile Include="PullAllData.py">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="GenerateModels.py">
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="GetTweets.py">
@@ -38,6 +41,9 @@
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="CorpDataPuller.py">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="PullSubsidiariesAndBrands.py">
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="TargetedWebScraping.py">
@@ -53,6 +59,9 @@
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="SentimentAnalyzer.py" />
+    <Compile Include="TradeBacktester.py">
+      <SubType>Code</SubType>
+    </Compile>
     <Compile Include="TweetCriteria.py" />
     <Compile Include="TweetManager.py" />
   </ItemGroup>

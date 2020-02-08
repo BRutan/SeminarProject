@@ -7,6 +7,7 @@
 
 import csv
 from datetime import datetime, date
+from pandas import DataFrame
 import re
 import os
 import string
@@ -196,7 +197,7 @@ class MYSQLDatabase(object):
         self.__tables[tableName] = lowerCols
         cursor.close()
         
-    def ExecuteQuery(self, query, schema = None, getResults = False, shouldCommit = False):
+    def ExecuteQuery(self, query, schema = None, getResults = False, shouldCommit = False, useDataFrame = False):
         """
         * Execute query on passed table for given schema.
         Required Inputs:
@@ -206,6 +207,7 @@ class MYSQLDatabase(object):
         * getResults: Put True if executing a SELECT statement, and expecting results.
         * shouldCommit: Put True if executing INSERT/DELETE/UPDATE statement, and should
         commit the changes to the database.
+        * useDataFrame: Put True if you want SELECT statement results to be stored in a dataframe.
         """
         if not schema:
             schema = self.ActiveSchema
@@ -294,6 +296,15 @@ class MYSQLDatabase(object):
                 for column in columnNames:
                     output[column].append(result[colNum])
                     colNum += 1  
+            if useDataFrame:
+                # Use primary key as index if specified
+                output = DataFrame(columns = output.columns.keys())
+                pkeys = []
+                for col in self.__tables[table]:
+                    if self.__tables[table][col][2] == True:
+                        pkeys.append(col)
+                if pKeys:
+                    output = output.set_index(pkeys)
 
             return output
 

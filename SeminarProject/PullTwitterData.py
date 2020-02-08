@@ -112,18 +112,6 @@ class TwitterPuller(object):
         for col in TwitterPuller.__columnNames:
             insertValues[col] = []
 
-    ###################
-    # Deprecated:
-    ###################
-    def __temp(self):
-        """
-        * Store info regarding memcached.
-        """
-        pulled_corp_searches = mc.get("corp_searches")
-        if not pulled_corp_searches:
-            pulled_corp_searches = {}
-
-
 
 class APICallExceeded(Exception):
     """

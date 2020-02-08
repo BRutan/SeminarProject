@@ -43,7 +43,7 @@ if __name__ == '__main__':
     if errs:
         raise Exception('\n'.join(errs))
 
-    seminar = SeminarProject(startDate, endDate, args.tickerpath, db)
+    seminar = SeminarProject(startDate, endDate, db, args.tickerpath)
 
     # Perform key steps for single ticker if was specified, else perform for all tickers listed in XLY_ALL_Holdings.csv:
     if args.ticker:
