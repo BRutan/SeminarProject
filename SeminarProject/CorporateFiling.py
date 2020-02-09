@@ -47,17 +47,17 @@ class PullingSteps(object):
     @PullText.setter
     def PullText(self, pull):
         if not isinstance(pull, bool):
-            raise Exception('PullText must be boolean.')
+            raise BaseException('PullText must be boolean.')
         self.__pullText = pull
     @PullTables.setter
     def PullTables(self, pull):
         if not isinstance(pull, bool):
-            raise Exception('PullTables must be boolean.')
+            raise BaseException('PullTables must be boolean.')
         self.__pullTables = pull
     @PullFinancials.setter
     def PullFinancials(self, pull):
         if not isinstance(pull, bool):
-            raise Exception('PullFinancials must be boolean.')
+            raise BaseException('PullFinancials must be boolean.')
         self.__pullFinancials = pull
 
 class CorporateFiling(object):
@@ -98,7 +98,7 @@ class CorporateFiling(object):
         if not isinstance(steps, PullingSteps):
             errMsgs.append('steps must be a PullingSteps object.')
         if errMsgs:
-            raise Exception('\n'.join(errMsgs))
+            raise BaseException('\n'.join(errMsgs))
         self.__ticker = ticker
         self.__type = CorporateFiling.__types[type]
         self.__corpName = ''
@@ -137,9 +137,9 @@ class CorporateFiling(object):
                 self.__ExtractData(type, steps, customDocPath=args['customDocPath'])
         # Handle exceptions if occurred:
         if errMsgs:
-            raise Exception('\n'.join(errMsgs))
+            raise BaseException('\n'.join(errMsgs))
         elif not hasArg:
-            raise Exception('Please provide at least one argument in (htmlPath, date, customDocPath).')
+            raise BaseException('Please provide at least one argument in (htmlPath, date, customDocPath).')
 
     ####################
     # Properties:
@@ -222,7 +222,7 @@ class CorporateFiling(object):
         if not isinstance(exp, CorporateFiling.__reType) and not isinstance(exp, str):
             errMsgs.append("exp must be a string/regular expression.")
         if errMsgs:
-            raise Exception('\n'.join(errMsgs))
+            raise BaseException('\n'.join(errMsgs))
 
         subDocs = self.__subDocs
         for docName in subDocs.keys():
@@ -256,7 +256,7 @@ class CorporateFiling(object):
         if not isinstance(exp, CorporateFiling.__reType) and not isinstance(exp, str):
             errMsgs.append("exp must be a string/regular expression.")
         if errMsgs:
-            raise Exception('\n'.join(errMsgs))
+            raise BaseException('\n'.join(errMsgs))
 
         for key in self.SubDocuments.keys():
             doc = self.SubDocuments[key]
@@ -287,7 +287,7 @@ class CorporateFiling(object):
         if fileName and not isinstance(fileName, str):
             errMsgs.append('fileName must be a string.')
         if errMsgs:
-            raise Exception('\n'.join(errMsgs))
+            raise BaseException('\n'.join(errMsgs))
         if not fileName:
             fileName = [self.Name, '_tables']
         else:
@@ -362,7 +362,7 @@ class CorporateFiling(object):
         elif not isinstance(fileName, str):
             errMsgs.append('fileName must be a string.')
         if errMsgs:
-            raise Exception('\n'.join(errMsgs))
+            raise BaseException('\n'.join(errMsgs))
         path = [folderPath.strip()]
         if not folderPath.endswith('\\'):
             path.append('\\')
@@ -415,7 +415,7 @@ class CorporateFiling(object):
         else:
             errMsgs.append('textChunkSize must be numeric.')
         if errMsgs:
-            raise Exception(''.join(errMsgs))
+            raise BaseException(''.join(errMsgs))
         path = [folderPath.strip()]
         if not folderPath.endswith('\\'):
             path.append('\\')
@@ -465,7 +465,7 @@ class CorporateFiling(object):
             # Pull from website:
             links = self.__GetDocumentLinks(date, steps.PullFinancials)
         else:
-            raise Exception('At least one argument must be provided.')
+            raise BaseException('At least one argument must be provided.')
 
         # Document is divided into multiple <document> tags, containing text, financials, tables with footnotes:
         self.__subDocs = {}
@@ -527,7 +527,7 @@ class CorporateFiling(object):
         try:
             data = requests.get(''.join(link)).text
         except Exception:
-            raise Exception(message='\n'.join(['CorporateFiling::__GetDocumentLinks()','Could not grab data from link:', link]))
+            raise BaseException(message='\n'.join(['CorporateFiling::__GetDocumentLinks()','Could not grab data from link:', link]))
 
         soup = Soup(data, "lxml")
         link = ''
@@ -554,7 +554,7 @@ class CorporateFiling(object):
         try:
             soup = Soup(requests.get(link).text, 'lxml')
         except Exception:
-            raise Exception(message='\n'.join(['Could not grab data from link:', link]))
+            raise BaseException(message='\n'.join(['Could not grab data from link:', link]))
         # Get filing date:
         self.__date = docFilingDate
         targetLinks = []
@@ -719,7 +719,7 @@ class SubDocument(object):
         if not isinstance(exp, SubDocument.__reType) and not isinstance(exp, str):
             errMsgs.append("exp must be a string/regular expression.")
         if errMsgs:
-            raise Exception('\n'.join(errMsgs))
+            raise BaseException('\n'.join(errMsgs))
 
         tables = self.__tables
         for tableName in tables.keys():
@@ -992,7 +992,7 @@ class TableItem(object):
         if not isinstance(exp, TableItem.__reType) and not isinstance(exp, str):
             errMsgs.append("exp must be a string/regular expression.")
         if errMsgs:
-            raise Exception('\n'.join(errMsgs))
+            raise BaseException('\n'.join(errMsgs))
         
         if not self.HasData:
             return None
@@ -1496,7 +1496,7 @@ class SoupTesting(object):
             errMsgs.append('tagName must be a string or container if specified.')
 
         if len(errMsgs) > 0:
-            raise Exception('\n'.join(errMsgs))
+            raise BaseException('\n'.join(errMsgs))
 
         # Exit immediately if file already present:
         if os.path.exists(filePath):

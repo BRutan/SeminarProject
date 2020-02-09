@@ -68,7 +68,7 @@ def CheckArgs(parser):
     lags = [] if not args.lags else list(args.lags).sort()
     
     if errs:
-        raise Exception(''.join(errs))
+        raise BaseException(''.join(errs))
     return (args.inpath, args.outpath, validModels, lags, args.staling, args.searchterms)
 
 def PullFile(path, searchterms):
@@ -101,7 +101,7 @@ def PullFile(path, searchterms):
                     if pair[1] == -1:
                         missingHeaders.append(pair[0])
                 if missingHeaders:
-                    raise Exception(''.join(['The following headers are missing from input file:', ','.join(missingHeaders)]))
+                    raise BaseException(''.join(['The following headers are missing from input file:', ','.join(missingHeaders)]))
                 atHeader = False
         if searchterms:
             searchTermParams = set(data['searchterm'])

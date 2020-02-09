@@ -6,7 +6,10 @@
 # time period.
 
 from datetime import datetime, date, timedelta
+import lxml
+from lxml import html
 from math import log
+import requests
 import requests_cache
 import numpy as np
 from pandas import DataFrame
@@ -14,13 +17,13 @@ import yfinance as yf
 import requests
 import os
 
-class DataPuller(object):
+class CorpDataPuller(object):
     """
     * Pull historical returns, company data for ticker.
     """
     __haveAPIKeys = False
     __session = requests_cache.CachedSession(cache_name = 'cache', backend = 'sqlite', expire_after = timedelta(days=3))
-    __validPriceTypes = { pType : True for pType in ['Open', 'High', 'Low', 'Close', 'Volume']}
+    __validPriceTypes = { pType.lower() : True for pType in ['Open', 'High', 'Low', 'Close', 'Volume']}
     __allAttributes = ['language', 'region', 'quoteType', 'triggerable', 'quoteSourceName', 'currency', 'tradeable', 'exchange', 'shortName', 'longName', 'messageBoardId', 
                          'exchangeTimezoneName', 'exchangeTimezoneShortName', 'gmtOffSetMilliseconds', 'market', 
                          'esgPopulated', 'firstTradeDateMilliseconds', 'priceHint', 'postMarketChangePercent', 'postMarketTime', 'postMarketPrice', 'postMarketChange', 
@@ -32,87 +35,87 @@ class DataPuller(object):
                          'trailingPE', 'trailingAnnualDividendYield', 'marketState', 'epsTrailingTwelveMonths', 'epsForward', 'sharesOutstanding', 
                          'bookValue', 'fiftyDayAverage', 'fiftyDayAverageChange', 'fiftyDayAverageChangePercent', 'twoHundredDayAverage', 'twoHundredDayAverageChange', 
                          'twoHundredDayAverageChangePercent', 'marketCap', 'forwardPE', 'priceToBook', 'sourceInterval', 'exchangeDataDelayedBy', 'symbol']
-    __validAttributes = { key.lower() : key for key in __allAttributes}
-    def __init__(self):
+    __requestAttributes = { 'sector' : 'sector', 'industry' : 'industry', 'full time employees' : 'full time employees' }
+    __validYFinanceAttributes = { key.lower() : key for key in __allAttributes }
+    def __init__(self, attributes = None, priceTypes = None):
         """
         * Instantiate new object.
         """
-        pass
-    def GetAttributes(self, ticker, attributes):
+        self.__PriceTypes = []
+        self.__RequestAttrs = []
+        self.__YFinAttrs = []
+        errs = []
+        if attributes:
+            errs.extend(self.__CheckAttrs(attributes))
+        if priceTypes:
+            errs.extend(self.__CheckPriceTypes(priceTypes))
+        if errs:
+            raise Exception('\n'.join(errs))
+
+    def GetAttributes(self, ticker, attributes = None, priceTypes = None):
         """
         * Get attributes of company with ticker.
         Inputs:
         * ticker: String with company ticker.
+        Optional Inputs:
         * attributes: Put 'all' if want all possible attributes. Otherwise must be string in ValidAttributes().
         Outputs:
         * Returns map containing { Attr -> Value }.
         """
         errs = []
-        invalid = []
         if not isinstance(ticker, str):
             errs.append('ticker must be string.')
-        elif isinstance(attributes, str) and not attributes.lower() != 'all':
-            errs.append('attributes must be "all" if a string.')
-        elif isinstance(attributes, list) and attributes:
-            attributes = [attr.lower() for attr in attributes]
-            invalid = []
-            for attr in attributes:
-                if attr not in DataPuller.__validAttributes:
-                    invalid.append(lowered)
-            if invalid:
-                errs.append(''.join(['The following attributes are invalid: ', ','.join(invalid)]))
-        elif isinstance(attributes, list) and len(attributes) == 0:
-            errs.append('attributes must include at least one attribute.')
-        else:
-            errs.append('attributes must be "all" or list.')
+        if attributes:
+            result = self.__CheckAttrs(attributes)
+            if result:
+                errs.extend(result)
         if errs:
             raise Exception('\n'.join(errs))
-        
         # Get requested attributes for company:
         output = {}
-        data = yf.Ticker(ticker.upper())
-        output = {}
-        if isinstance(attributes, list):
-            for attr in attributes:
-                output[attr] = data.info[DataPuller.__validAttributes[attr]].trim()
-        else:
-            output = data.info
+        ticker = ticker.upper()
+        if self.__YFinAttrs:
+            data = yf.Ticker(ticker)
+            for attr in self.__YFinAttrs:
+                val = data.info[attr]
+                val = val if not isinstance(val, str) else val.strip()
+                output[attr] = val
+        
+        if self.__RequestAttrs:
+            url = 'https://finance.yahoo.com/quote/%s/profile?p=%s' % (ticker, ticker)
+            result = requests.get(url)
+            tree = html.fromstring(result.content)
+            for label in self.__RequestAttrs:
+                cap = label.capitalize()
+                xp = f"//span[text()='{cap}']/following-sibling::span[1]"
+                s = tree.xpath(xp)[0]
+                output[label] = s.text_content()
 
+        output = { key.lower() : output[key] for key in output }
+        
         return output
 
-    def GetAssetPrices(self, ticker, startDate, endDate, priceType = 'all', contReturn = False, methodLambda = False):
+    def GetAssetPrices(self, ticker, startDate, endDate, priceTypes = None):
         """
         * Get prices of security with ticker between dates.
         Inputs:
         * startDate: Expecting datetime/string with format YYYY-MM-DD.
         * endDate: Expecting datetime/string with format YYYY-MM-DD. 
         * ticker: Security ticker string.
+        Optional:
         * priceType: List of price types, or single string denoting price type, or 'all' if want all. Must be in ValidPriceTypes().
-        * contReturn: Put True if want to calculate continuously compounded returns.
-        * methodLambda: (Optional) Expecting a lambda to calculate returns. Must use functions 
-        that support Pandas.DataFrame.
+        Output:
+        * Returns dataframe filled with asset prices with Date and PriceTypes as columns for ticker.
         """
         errs = []
         if not isinstance(ticker, str):
             errs.append('ticker must be a string.')
-        elif isinstance(priceType, str) and priceType != 'all' and priceType not in __validPriceTypes:
-            errs.append('priceType is invalid.')
-        elif isinstance(priceType, list) and not priceType:
-            errs.append('Need at least one priceType.')
-        elif isinstance(priceType, list):
-            invalid = [pType for pType in priceType if pType not in __validPriceTypes]
-            if invalid:
-                errs.append(''.join(['The following priceTypes are invalid: ', ','.join(priceType)]))
-        else:
-            errs.append('priceType must be a string or a list.')
-        if not isinstance(contReturn, bool):
-            errs.append('contReturn must be a boolean.')
-
-        startDate, endDate, dateErrs = DataPuller.__ConvertDates(startDate, endDate)
+        if priceTypes:
+            errs.extend(self.__CheckPriceTypes(priceTypes))
+        startDate, endDate, dateErrs = CorpDataPuller.__ConvertDates(startDate, endDate)
         errs.extend(dateErrs)
-
         if errs:
-            raise Exception('\n'.join(errs))
+            raise BaseException('\n'.join(errs))
         
         ticker = ticker.lower()
         # Swap date order if necessary:
@@ -121,39 +124,79 @@ class DataPuller(object):
             endDate = startDate
             startDate = copy
 
-        startDate = startDate.strftime('%Y-%m-%d')
-        endDate = endDate.strftime('%Y-%m-%d')
-
         try:
             data = yf.Ticker(ticker.upper())
-            prices = data.history(start = startDate, end = endDate)
-        except:
-            raise Exception('Could not get data for ticker.');
-        if isinstance(priceType, str) and priceType != 'all':
-            priceType = [priceType]
-        if isinstance(priceType, list):
-            # Drop all unused columns:
-            cols = set(prices.columns)
-            targetCols = set(priceType)
-            dropCols = cols - targetCols
-            if dropCols:
-                prices = prices.drop(dropCols, axis=1)
-        # Calculate returns:
-        if contReturn:
-            method = lambda x_2, x_1 : np.log(x_2 / x_1)
-        else:
-            method = lambda x_2, x_1 : x_2 / x_1 - 1
-        if methodLambda:
-            method = methodLambda
+            prices = data.history(start = startDate.strftime('%Y-%m-%d'), end = endDate.strftime('%Y-%m-%d'))
+        except BaseException as ex:
+            raise Exception(str(ex));
 
-        return DataPuller.__CalcReturns(prices, method)
+        # Drop all unused columns:
+        prices = prices.rename(columns={col : col.lower() for col in prices.columns})
+        cols = set(prices.columns)
+        targetCols = set(self.__PriceTypes)
+        dropCols = cols - targetCols
+        if dropCols:
+            prices = prices.drop(dropCols, axis=1)
+        
+        return prices
 
     ###################
     # Private Helpers:
     ###################
+    def __CheckAttrs(self, attributes):
+        """
+        * Ensure attributes are valid.
+        """
+        errs = []
+        if isinstance(attributes, str) and not attributes.lower() != 'all':
+            errs.append('attributes must be "all" if a string.')
+        elif isinstance(attributes, str):
+            self.__YFinAttrs = CorpDataPuller.__validYFinanceAttributes.keys()
+            self.__RequestAttrs = CorpDataPuller.__requestAttributes.keys()
+        elif isinstance(attributes, list) and attributes:
+            attributes = [attr.lower() for attr in attributes]
+            invalid = [attr for attr in attributes if attr not in CorpDataPuller.__validYFinanceAttributes and attr not in CorpDataPuller.__requestAttributes]
+            if invalid:
+                errs.append(''.join(['The following attributes are invalid: ', ','.join(invalid)]))
+            else:
+                self.__YFinAttrs = []
+                self.__RequestAttrs = []
+                for attr in attributes:
+                    if attr in CorpDataPuller.__validYFinanceAttributes:
+                        self.__YFinAttrs.append(CorpDataPuller.__validYFinanceAttributes[attr])
+                    elif attr in CorpDataPuller.__requestAttributes:
+                        self.__RequestAttrs.append(CorpDataPuller.__requestAttributes[attr])
+        elif isinstance(attributes, list) and len(attributes) == 0:
+            errs.append('attributes must include at least one attribute.')
+        else:
+            errs.append('attributes must be "all" or list.')
+        
+        return errs
+        
+    def __CheckPriceTypes(self, priceTypes):
+        errs = []
+        if isinstance(priceTypes, str) and priceTypes != 'all' and priceTypes not in CorpDataPuller.__validPriceTypes:
+            errs.append('priceType is invalid.')
+        elif isinstance(priceTypes, str) and priceTypes == 'all':
+            self.__PriceTypes = CorpDataPuller.__validPriceTypes.keys()
+        elif isinstance(priceTypes, list) and not priceTypes:
+            errs.append('Need at least one priceType.')
+        elif isinstance(priceTypes, list):
+            invalid = [pType for pType in priceTypes if pType.lower() not in CorpDataPuller.__validPriceTypes]
+            if invalid:
+                errs.append(''.join(['The following priceTypes are invalid: ', ','.join(invalid)]))
+            else:
+                self.__PriceTypes  = [pType.lower() for pType in priceTypes]
+        else:
+            errs.append('priceType must be a string or a list.')
+        return errs
+
+    ###################
+    # Static Methods:
+    ###################
     @staticmethod
     def ValidAttributes():
-        return list(DataPuller.__validAttributes.keys())
+        return list(CorpDataPuller.__validAttributes.keys())
     @staticmethod
     def ValidPriceTypes():
         return list(__validPriceTypes.keys())

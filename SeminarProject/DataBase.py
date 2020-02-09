@@ -53,7 +53,7 @@ class MYSQLDatabase(object):
             errMsgs.append("schema must be a string.")
         # Raise exception if issues occur:
         if len(errMsgs) > 0:
-            raise Exception('\n'.join(errMsgs))
+            raise BaseException('\n'.join(errMsgs))
         self.__user = userName
         self.__pw = password
         self.__host = hostName
@@ -104,9 +104,9 @@ class MYSQLDatabase(object):
         * Create schema if does not exist for current mysql instance.
         """
         if not isinstance(schema, str):
-            raise Exception("schema must be a string.")
+            raise BaseException("schema must be a string.")
         elif not schema:
-            raise Exception("Please provide schema name.")
+            raise BaseException("Please provide schema name.")
 
         schema = schema.strip()
         
@@ -137,7 +137,7 @@ class MYSQLDatabase(object):
             schema = self.ActiveSchema
         errMsgs = self.__CheckParams(tableName, schema, columns)
         if len(errMsgs) > 0:
-            raise Exception('\n'.join(errMsgs))
+            raise BaseException('\n'.join(errMsgs))
 
         # Ensure that schema exists already and table does not exist yet:
         tableName = tableName.lower()
@@ -145,12 +145,12 @@ class MYSQLDatabase(object):
         # Ensure that schema exists in database, table does not exist yet:
         errMsgs = self.__CheckDBObjectsExist(tableName, schema, False)
         if len(errMsgs) > 0:
-            raise Exception('\n'.join(errMsgs))
+            raise BaseException('\n'.join(errMsgs))
 
         # Ensure that at least one column is specified:
         numColumns = len(columns.keys())
         if numColumns == 0:
-            raise Exception("At least one column must be specified.")
+            raise BaseException("At least one column must be specified.")
     
         # Reopen the connection:
         connect = self.__Reconnect(schema)
@@ -177,7 +177,7 @@ class MYSQLDatabase(object):
                 elif isinstance(pKey, bool) and pKey == True:
                     pKeyStr = ''.join(["PRIMARY KEY(", columnName, ")"]) 
             elif pKey and pKeyStr:
-                raise Exception('Only one primary key can exist per table.')
+                raise BaseException('Only one primary key can exist per table.')
             # Check if column should use foreign key relationship with another table:
             if columns[columnName][2]:
                 fKeyStrings.append("FOREIGN KEY(" + columnName + ") REFERENCES " + columns[columnName][2])
@@ -197,7 +197,7 @@ class MYSQLDatabase(object):
         self.__tables[tableName] = lowerCols
         cursor.close()
         
-    def ExecuteQuery(self, query, schema = None, getResults = False, shouldCommit = False, useDataFrame = False):
+    def ExecuteQuery(self, query, schema = None, getResults = False, shouldCommit = False, useDataFrame = False, dataframeIndex = None):
         """
         * Execute query on passed table for given schema.
         Required Inputs:
@@ -208,6 +208,7 @@ class MYSQLDatabase(object):
         * shouldCommit: Put True if executing INSERT/DELETE/UPDATE statement, and should
         commit the changes to the database.
         * useDataFrame: Put True if you want SELECT statement results to be stored in a dataframe.
+        * dataframeIndex = If a SELECT statement as a dataframe, specify the column to use as an index (string).
         """
         if not schema:
             schema = self.ActiveSchema
@@ -298,13 +299,10 @@ class MYSQLDatabase(object):
                     colNum += 1  
             if useDataFrame:
                 # Use primary key as index if specified
-                output = DataFrame(columns = output.columns.keys())
-                pkeys = []
-                for col in self.__tables[table]:
-                    if self.__tables[table][col][2] == True:
-                        pkeys.append(col)
-                if pKeys:
-                    output = output.set_index(pkeys)
+                output = DataFrame.from_dict(output)
+                if dataframeIndex and dataframeIndex in query:
+                    # Skip using supplied dataframe index if column not used in SELECT statement:
+                    output.set_index(dataframeIndex)
 
             return output
 
@@ -330,7 +328,7 @@ class MYSQLDatabase(object):
         if not isinstance(skipExceptions, bool):
             errMsgs.append('skipExceptions must be boolean.')
         if len(errMsgs) > 0:
-            raise Exception('\n'.join(errMsgs))
+            raise BaseException('\n'.join(errMsgs))
 
         numRows = len(columns[list(columns.keys())[0]])
         chunkSize = min(int(chunkSize), numRows)
@@ -384,12 +382,12 @@ class MYSQLDatabase(object):
             errMsgs = self.__CheckParams(tableName, schema, columns)
         tableName = tableName.lower()
         if len(errMsgs) > 0:
-            raise Exception('\n'.join(errMsgs))
+            raise BaseException('\n'.join(errMsgs))
         # Raise exception if schema and table do not exist:
         if not skipChecks:
             errMsgs = self.__CheckDBObjectsExist(tableName, schema)
         if len(errMsgs) > 0:
-            raise Exception('\n'.join(errMsgs))
+            raise BaseException('\n'.join(errMsgs))
 
         # Reopen the connection:
         connect = self.__Reconnect(schema)
@@ -401,7 +399,7 @@ class MYSQLDatabase(object):
         numRows = len(columns[firstColName])
         for col in columns.keys():
             if len(columns[col]) != numRows:
-                raise Exception('Number of rows must be uniform across all columns.')
+                raise BaseException('Number of rows must be uniform across all columns.')
         # Exit if no data was provided for columns:
         if numRows == 0:
             return None
@@ -463,7 +461,7 @@ class MYSQLDatabase(object):
 
         if len(errMsgs) > 0:
             msg = '\n'.join(errMsgs)
-            raise Exception(msg)
+            raise BaseException(msg)
 
         # Pull data from select statement:
         query = query.lower()
@@ -539,7 +537,7 @@ class MYSQLDatabase(object):
         elif isinstance(elems, list):
             return [MYSQLDatabase.__invalidCharsRE.sub('', elem) for elem in elems]
         else:
-            raise Exception('elems must be string or list of strings.')
+            raise BaseException('elems must be string or list of strings.')
 
     #######################
     # Helper Functions:

@@ -5,7 +5,7 @@
 
 from TargetedWebScraping import BrandQuery, SubsidiaryQuery
 from CorporateFiling import CorporateFiling, TableItem, DocumentType, PullingSteps, SoupTesting
-from CorpDataPuller import DataPuller
+from CorpDataPuller import CorpDataPuller
 import csv
 from DataBase import MYSQLDatabase
 from datetime import datetime, date, timedelta
@@ -14,6 +14,7 @@ import gc
 import nltk
 from nltk.corpus import stopwords
 from numpy.random import choice as choose
+from pandas import DataFrame
 from pandas.tseries import offsets
 import re
 from SentimentAnalyzer import SentimentAnalyzer
@@ -24,66 +25,43 @@ class SeminarProject(object):
     * Key objects/methods required for performing seminar project.
     """
     __utfSupport = 'CHARACTER SET utf8 COLLATE utf8_unicode_ci'
-    __cacheKeySig = "{Corp:%s}{Brand:%s}"
-    __stopWords = { re.sub('[^a-z]', '', word.lower()) : True for word in set(stopwords.words('english')) }
-    CorpTableColumns = {"CorpID" : ["int", True, ""], "Name" : ["text", False, ""], 
-                                 "Ticker" : ["varchar(5)", False, ""], "Industry" : ["text", False, ""], "Weight" : ["float", False, ""] }
-    CorpBrandTableColumns = {"CorpID" : ["int", False, "Corporations(CorpID)"], "Brands" : ["text " + __utfSupport, False, ""], 
+    __CorpTableColumns = {"CorpID" : ["int", True, ""], 
+                                 "LongName" : ["text", False, ""], 
+                                 "Ticker" : ["varchar(5)", False, ""], 
+                                 "Sector" : ["text", False, ""], 
+                                 "Region" : ["text", False, ""],
+                                 "Currency" : ["text", False, ""],
+                                 "Exchange" : ["text", False, ""],
+                                 "ExchangeTimeZoneName" : ["text", False, ""],
+                                 "SharesOutstanding" : ["bigint", False, ""],
+                                 "BookValue" : ["float", False, ""],
+                                 "MarketCap" : ["bigint", False, ""]
+                                 }
+    __CorpBrandTableColumns = {"CorpID" : ["int", False, "Corporations(CorpID)"], "Brands" : ["text " + __utfSupport, False, ""], 
                                     "AppDate" : ["Date", False, ""], "SubNum" : ["int", False, "Subsidiaries(Number)"]}
-    SubsidariesTableColumns = {"Number" : ["int", True, ""], "CorpID" : ["int", False, "Corporations(CorpID)"], "Subsidiaries" : ["text", False, ""]}
-    DataColumns = { "CorpID" : ["int", False, "Corporations(CorpID)"], "SearchTerm" : ["text", False, ""], 
+    __SubsidariesTableColumns = { "Number" : ["int", True, ""], "CorpID" : ["int", False, "Corporations(CorpID)"], "Subsidiaries" : ["text", False, ""]}
+    __DataColumns = { "CorpID" : ["int", False, "Corporations(CorpID)"], "SearchTerm" : ["text", False, ""], 
                     "User" : ["text " + __utfSupport, False, ''], 
                     "Date" : ["date", False, ""], 
                     "Tweet" : ["text " + __utfSupport, False, ''], 
                     "Retweets" : ["int", False, ""], 
-                    "SubNum" : ["int", False, "Subsidiaries(Number)"] }
-    HistoricalPriceCols = { 'CorpID' : ['int', False, 'Corporations(CorpID)'], 'Adj_Close' : ['float', False, ''], 'Date' : ['Date', False, ''] }
-    def __init__(self, startDate, endDate, database, tickers, schema = None, toptweets = False, termSample = None, dateStep = None):
+                    "SubNum" : ["int", False, "Subsidiaries(Number)"], "Coordinate" : ["Point", False, ""] }
+    __HistoricalPriceCols = { 'CorpID' : ['int', False, 'Corporations(CorpID)'], 'Close' : ['float', False, ''], 
+                                'Date' : ['Date', True, ''], 'Volume' : ['bigint', False, ''] }    
+    __TweetTableSig = "tweets_%s"
+    __PriceTableSig = "prices_%s"
+    def __init__(self, tickerInputData, database, schema = None):
         """
         * Initialize new object.
         """
-        self.__dateStep = dateStep
-        self.__termSampleSize = termSample
-        self.__pullTopTweets = toptweets
-        self.Tickers = tickers
-        self.StartDate = startDate
-        self.EndDate = endDate
+        self.TickersSearchAttrs = tickerInputData
         self.DB = database
         if schema:
             self.__schema = schema
         else:
             self.__schema = self.DB.ActiveSchema
-        
-        # Get tickers from CSV file at tickerPath:
-        self.__CorpNumToTicker = {}
-        self.__TickerToCorpNum = {}
-        self.CorpTableColumns = {"CorpID" : ["int", True, ""], 
-                                 "Name" : ["text", False, ""], 
-                                 "Ticker" : ["varchar(5)", False, ""], 
-                                 "Sector" : ["text", False, ""], 
-                                 "Region" : ["text", False, ""],
-                                 "Currency" : ["float", False, ""],
-                                 "Exchange" : ["float", False, ""],
-                                 "ExchangeTimeZone" : ["text", False, ""],
-                                 "SharesOutstanding" : ["int", False, ""],
-                                 "BookValue" : ["float", False, ""],
-                                 "MarketCap" : ["int", False, ""]
-                                 }
-        self.CorpBrandTableColumns = {"CorpID" : ["int", False, "Corporations(CorpID)"], "Brands" : ["text " + SeminarProject.__utfSupport, False, ""], 
-                                      "AppDate" : ["Date", False, ""], "SubNum" : ["int", False, "Subsidiaries(Number)"]}
-        self.SubsidariesTableColumns = { "Number" : ["int", True, ""], "CorpID" : ["int", False, "Corporations(CorpID)"], "Subsidiaries" : ["text", False, ""]}
-        self.DataColumns = { "CorpID" : ["int", False, "Corporations(CorpID)"], "SearchTerm" : ["text", False, ""], 
-                       "User" : ["text " + SeminarProject.__utfSupport, False, ''], 
-                       "Date" : ["date", False, ""], 
-                       "Tweet" : ["text " + SeminarProject.__utfSupport, False, ''], 
-                       "Retweets" : ["int", False, ""], 
-                       "SubNum" : ["int", False, "Subsidiaries(Number)"], "Coordinate" : ["Point", False, ""] }
-        self.HistoricalPriceCols = { 'CorpID' : ['int', False, 'Corporations(CorpID)'], 'Close' : ['float', False, ''], 
-                                    'Date' : ['Date', False, ''], 'Volume' : ['int', False, ''] }    
-
-        self.TickerToBrands = {}
-        # Map { Corporation -> { Subsidiary -> Number } }:
-        self.TickerToSubs = {}
+        self.TickerToCorpID = {}
+        self.TickerToTweetTable = {}
         self.TickerToReturnTable = {}
         
     #######################
@@ -93,20 +71,13 @@ class SeminarProject(object):
         """
         * Execute all steps in sequential order.
         """
-        self.GetCorpAttributes()
         self.CreateTables()
+        self.InsertCorpAttributes()
+        self.GetHistoricalData()
         self.GetSubsidiaries()
         self.GetBrands()
         self.GetTweets()
-        
-    def GetCorpAttributes(self):
-        """
-        * Pull all corporate attributes for stored tickers or passed
-        ticker.
-        """
-        # Determine which tickers already have information:
-        for ticker in self.Tickers:
-            pass
+    
     def CreateTables(self):
         """
         * Create all tables to store relevant data for project. If ticker is specified, and does not exist
@@ -114,79 +85,72 @@ class SeminarProject(object):
         add ticker to Corporations table.
         """
         db = self.DB
-        self.TickerToTweetTable = {}
-        # Skip creating corporations table if already created:
+        # Skip creating tables if already created:
         if not db.TableExists("Corporations"):
-            corpTableColumns = self.CorpTableColumns
-            # Create Corporations table that maps corporation name to ticker, insert all corporations into database:
-            db.CreateTable("Corporations", corpTableColumns, schema = self.__schema)
-            corpData = {}
-            for key in corpTableColumns.keys():
-                corpData[key] = []
-                for ticker in tickerToCorps.keys():
-                    if key == "CorpID":
-                        corpData[key].append(self.__TickerToCorpNum[ticker]) 
-                    elif key == "Ticker":
-                        corpData[key].append(ticker)
-                    elif key == "Name":
-                        corpData[key].append(tickerToCorps[ticker][0])
-                    elif key == "Industry":
-                        corpData[key].append(tickerToCorps[ticker][1])
-                    elif key == "Weight":
-                        corpData[key].append(tickerToCorps[ticker][2])
-            # Insert pulled corporation data from local XLY file into Corporations database:
-            db.InsertValues("Corporations", corpData)
-        else:
-            results = db.ExecuteQuery("SELECT * FROM Corporations", getResults = True)
-            if results:
-                for row, ticker in enumerate(results['ticker']):
-                    lowered = ticker.lower()
-                    self.Tickers[lowered] = (results['name'][row], results['industry'][row])
-                    self.__TickerToCorpNum[lowered] = results['corpid'][row]
-                    self.__CorpNumToTicker[results['corpid'][row]] = lowered
-            if _ticker and _ticker not in self.Tickers:
-                # Add to Corporations table:
-                corpID = max(results['corpID']) + 1
-                corpData = {'ticker' : _ticker, 'corpid' : corpID}
-                db.InsertValues("Corporations", corpData)
-                self.Tickers.append(_ticker)
+            db.CreateTable("Corporations", SeminarProject.__CorpTableColumns, schema = self.__schema)
         if not db.TableExists("Subsidiaries"):
-            db.CreateTable("Subsidiaries", self.SubsidariesTableColumns, schema = self.__schema)
+            db.CreateTable("Subsidiaries", SeminarProject.__SubsidariesTableColumns, schema = self.__schema)
         if not db.TableExists("CorporateBrands"):
-            db.CreateTable("CorporateBrands", self.CorpBrandTableColumns, schema = self.__schema)
+            db.CreateTable("CorporateBrands", SeminarProject.__CorpBrandTableColumns, schema = self.__schema)
         
         # Create all Corporations tables:
-        tweetColumns = self.DataColumns
-        returnColumns = self.HistoricalPriceCols
-        tweetTableSig = "tweets_%s"
-        returnTableSig = "returns_%s"
+        tweetColumns = SeminarProject.__DataColumns
+        returnColumns = SeminarProject.__HistoricalPriceCols
+        tweetTableSig = SeminarProject.__TweetTableSig
+        priceTableSig = SeminarProject.__PriceTableSig
         # Create Tweets_{Ticker}, Returns_{Ticker} table for tweet and returns data for 
         # each corporation:
-        for ticker in self.Tickers.keys():
+        for rowNum in range(0, len(self.TickersSearchAttrs)):
+            ticker = self.TickersSearchAttrs['ticker'][rowNum].lower()
             # Create tweet data table:
             tableName = tweetTableSig % ticker.strip()
-            self.TickerToTweetTable[ticker.lower()] = tableName
+            self.TickerToTweetTable[ticker] = tableName
             if not db.TableExists(tableName):
                 db.CreateTable(tableName, tweetColumns)
             # Create return data table:
-            tableName = returnTableSig % ticker.strip()
-            self.TickerToReturnTable[ticker.lower()] = tableName
+            tableName = priceTableSig % ticker.strip()
+            self.TickerToReturnTable[ticker] = tableName
             if not db.TableExists(tableName):
                 db.CreateTable(tableName, returnColumns)
 
-    def GetSubsidiaries(self, ticker = None):
+    def InsertCorpAttributes(self):
+        """
+        * Pull all corporate attributes for stored tickers or passed
+        ticker.
+        """
+        results = self.DB.ExecuteQuery("SELECT CorpID, Ticker From Corporations", getResults=True, useDataFrame=True)
+        tickers = set(self.TickersSearchAttrs['ticker'])
+        maxCorpID = 0
+        if (isinstance(results, DataFrame) and not results.empty) or (isinstance(results, dict) and results):
+            # Determine which tickers already have information, skip pulling attributes for those tickers:
+            maxCorpID = max(results['corpid'])
+            for num, ticker in enumerate(results['ticker']):
+                self.TickerToCorpID[ticker] = results['corpid'][num]
+                if ticker in tickers:
+                    tickers.remove(ticker)
+        if tickers:
+            corpID = maxCorpID + 1
+            targetAttrs = [attr for attr in list(SeminarProject.__CorpTableColumns.keys()) if attr.lower() not in ['corpid', 'ticker']]
+            puller = CorpDataPuller(targetAttrs)
+            for ticker in tickers:
+                columnData = { key.lower() : [] for key in SeminarProject.__CorpTableColumns }
+                columnData['ticker'].append(ticker)
+                columnData['corpid'].append(corpID)
+                attrs = puller.GetAttributes(ticker)
+                for attr in attrs:
+                    columnData[attr].append(attrs[attr])
+                self.DB.InsertValues('Corporations', columnData)
+                self.TickerToCorpID[ticker] = corpID
+                corpID = corpID + 1
+
+    def GetSubsidiaries(self):
         """
         * Pull subsidiaries from each corporation's 10K, and load into 
         database. If already loaded subsidiaries into database then pull 
         using query.
         """
-        if ticker and isinstance(ticker, str):
-            _ticker = ticker.lower()
-        elif ticker and isinstance(ticker, list):
-            _ticker = [tick.lower() for tick in ticker]
-        else:
-            _ticker = None
         db = self.DB
+        tickerAttrs = self.TickersSearchAttrs
         yearEnd = datetime.today() + offsets.YearEnd()
         subs = re.compile('subsidiaries', re.IGNORECASE)
         nameRE = re.compile('name', re.IGNORECASE)
@@ -195,7 +159,7 @@ class SeminarProject(object):
         queryString = ['SELECT A.Ticker, B.Subsidiaries, B.Number FROM Corporations AS A']
         queryString.append('INNER JOIN Subsidiaries As B ON A.CorpID = B.CorpID WHERE B.Number IS NOT NULL;')
         queryString = ' '.join(queryString)
-        results = db.ExecuteQuery(queryString, getResults = True)
+        results = db.ExecuteQuery(queryString, getResults = True, useDataFrame = True)
         maxSubNum = 1
         # Determine if pulled some/all subsidiaries already:
         if results:
@@ -241,17 +205,11 @@ class SeminarProject(object):
                     insertData['Number'] = [self.TickerToSubs[ticker][name] for name in self.TickerToSubs[ticker].keys()]
                     db.InsertValues("Subsidiaries", insertData)
                     
-    def GetBrands(self, ticker = None):
+    def GetBrands(self):
         """
         * Pull all brands from WIPO website, push into database.
         """
         # Determine if brands were already loaded for each corporation:
-        if ticker and isinstance(ticker, str):
-            _ticker = ticker.lower()
-        elif ticker and isinstance(ticker, list):
-            _ticker = [tick.lower() for tick in ticker]
-        else:
-            _ticker = None
         db = self.DB
         query = ['SELECT A.ticker, B.brands, B.appdate, B.subnum FROM corporations as A INNER JOIN corporatebrands as B']
         query.append(' on A.corpid = B.corpid WHERE B.brands IS NOT NULL;')
@@ -308,12 +266,6 @@ class SeminarProject(object):
         """
         * Randomly sample all tweets and insert into associated table in schema.
         """
-        if ticker and isinstance(ticker, str):
-            _ticker = ticker.lower()
-        elif ticker and isinstance(ticker, list):
-            _ticker = [tick.lower() for tick in ticker]
-        else:
-            _ticker = None
         args = {}
         args['since'] = self.StartDate
         args['until'] = self.EndDate
@@ -342,21 +294,55 @@ class SeminarProject(object):
             # or are short or commond words:
             vals = self.__FilterAndSampleSearchTerms(tickersToSearchTerms[ticker], self.TickerToBrands[ticker], args['termSampleSize'])
             args['searchTerms'] = [val[0] for val in vals]
-            args['subs'] = [val[2] for val in vals]
             # Randomly sample tweets based upon args:
             for num, term in enumerate(args['searchTerms']):
-                sub = args['subs'][num]
                 puller.PullTweetsAndInsert(args, corpID, sub, table, term, db, self.__pullTopTweets, numTweets = args['interDaySampleSize'])
                 tickersToSearchTerms[ticker][term] = True
 
-
-    def GetHistoricalData(self, tickerInfo):
+    def GetHistoricalData(self):
         """
-        * Get historical data for all tickers over past year.
+        * Get historical data for all tickers for date range specified in file.
         """
-        puller = DataPuller()
-        priceTypes = ['Close', 'Volume']
-        returns = puller.GetAssetPrices(ticker, args.startdate, args.enddate)
+        priceTable = SeminarProject.__PriceTableSig
+        skipCols = ['corpid', 'date']
+        priceTypes = [key.lower() for key in SeminarProject.__HistoricalPriceCols if key.lower() not in skipCols]
+        puller = CorpDataPuller(priceTypes = priceTypes)
+        tickerToPeriod = {}
+        for row in range(0, len(self.TickersSearchAttrs)):
+            row = self.TickersSearchAttrs.iloc[row]
+            table = priceTable % row['ticker']
+            if not self.DB.TableExists(table):
+                tickerToPeriod[row['ticker']] = (row['startdate'], row['enddate'])
+            else:
+                results = self.DB.ExecuteQuery(''.join(["SELECT * FROM ", table]), getResults = True, useDataFrame = True)
+                start = row['startdate']
+                end = row['enddate']    
+                if (isinstance(results, DataFrame) and not results.empty) or (not isinstance(results, DataFrame) and results):
+                    earliest = min(results['date'])
+                    latest = max(results['date'])
+                    # Determine which period to use:
+                    if not (start >= earliest and end <= latest):
+                        if end >= earliest:
+                            days = (earliest - end).days - 1
+                            end += timedelta(days=days)
+                        if start <= latest:
+                            days = (latest - start).days + 1
+                            start += timedelta(days=days)
+                tickerToPeriod[row['ticker']] = (start, end)
+                    
+        # Pull return data and insert into database:
+        for ticker in tickerToPeriod:
+            table = priceTable % ticker
+            start = tickerToPeriod[ticker][0]
+            end = tickerToPeriod[ticker][1]
+            prices = puller.GetAssetPrices(ticker, start, end)
+            colData = { key.lower() : [] for key in SeminarProject.__HistoricalPriceCols }
+            colData['corpid'] = [self.TickerToCorpID[ticker]] * len(prices)
+            for key in prices:
+                colData[key.lower()] = list(prices[key])
+            colData['date'] = list(prices.index)
+            self.DB.InsertValues(table, colData)
+            
 
         
     ########################
@@ -395,46 +381,6 @@ class SeminarProject(object):
         nltk.download('stopwords')
         #if not os.path.exists('C:\\Users\\rutan\\AppData\\Roaming\\nltk_data\\corpora\\stopwords\\'):
         #    nltk.download('stopwords')
-
-    def __PullTickers(self, tickerPath):
-        """
-        * Pull in all consumer discretionary tickers and other attributes from local file.
-        Store Ticker -> ( Name, Sector, Weight) )
-        """
-        tickers = {}
-        nameToTicker = {}
-        classMatch = re.compile('Class [A-Z]')
-        unassignedMatch = re.compile('unassigned', re.IGNORECASE)
-        with open(tickerPath, 'r') as f:
-            reader = csv.reader(f)
-            atHeader = True
-            # Map { Ticker -> (Name, Sector, Weight) }:
-            # CSV Columns:
-            # Name	Ticker	Identifier	SEDOL	Weight	Sector	Shares Held	Local Currency
-            corpNum = 1
-            for row in reader:
-                if not atHeader:
-                    name = row[0].strip()
-                    name = classMatch.sub('', name).strip()
-                    ticker = row[1].strip().lower()
-                    weight = row[4].strip()
-                    sector = row[5].strip()
-                    # Skip companies with unassigned sectors:
-                    if unassignedMatch.search(sector):
-                        continue
-                    # If hit another share class for same company, then accumulate the weight in the index:
-                    if name in nameToTicker:
-                        origTicker = nameToTicker[name]
-                        tickers[origTicker] = (name, sector, str(float(weight) + float(tickers[origTicker][2])))
-                    else:
-                        tickers[ticker] = (name, sector, marketCap, location)
-                        nameToTicker[name] = ticker
-                    self.__CorpNumToTicker[corpNum] = ticker
-                    self.__TickerToCorpNum[ticker] = corpNum
-                    corpNum += 1
-                atHeader = False
-
-        self.Tickers = tickers
     #######################
     # Deprecated:
     #######################

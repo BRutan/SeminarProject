@@ -58,7 +58,7 @@ class BrandQuery(object):
         * subsidiaries: Expecting list of subsidiaries to query.
         """
         if not isinstance(subsidiaries, dict):
-            raise Exception('subsidiaries needs to be a dictionary.')
+            raise BaseException('subsidiaries needs to be a dictionary.')
 
         if not self.__driver:
             self.__StartBrowser()
@@ -183,7 +183,7 @@ class BrandQuery(object):
                 self.__resultsTable = self.__driver.find_element_by_xpath('//*[@id="results"]')
         except:
             self.__EndSession()
-            raise Exception('WIPO website has kicked you off for detecting automation. Try again later.')
+            raise BaseException('WIPO website has kicked you off for detecting automation. Try again later.')
 
         pyautogui.FAILSAFE = False
 

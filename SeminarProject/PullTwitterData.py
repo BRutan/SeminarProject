@@ -29,7 +29,7 @@ class TwitterPuller(object):
     ###############################
     # tweetCriteria = got.manager.TweetCriteria().setQuerySearch('test').setMaxTweets(5)
     # ['author_id', 'date', 'favorites', 'formatted_date', 'geo', 'hashtags', 'id', 'mentions', 'permalink', 'retweets', 'text', 'urls', 'username']
-    def PullTweetsAndInsert(self, args, corpID, subNum, tableName, searchTerm, db, topTweets = False, numTweets = 500):
+    def PullTweetsAndInsert(self, corpID, tickerArgs, tableName, db):
         """
         * Pull all tweets using single search term.
         """
@@ -67,7 +67,7 @@ class TwitterPuller(object):
             currDate = nextDate
             dateStep += stepSize
 
-    def PullTweets(self, args, numTweets = 500):
+    def PullTweets(self, tickerArgs):
         """
         * Pull all tweets using list of search terms.
         """

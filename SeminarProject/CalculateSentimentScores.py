@@ -73,7 +73,7 @@ def CalculateSentimentScores():
         errs.append('--periodsubsample must be positive integer.')
     
     if errs:
-        raise Exception('\n'.join(errs))
+        raise BaseException('\n'.join(errs))
 
     # Calculate sentiment scores using stored tweets, output to local csv file.
     table = 'tweets_%s' % args.ticker.lower()
