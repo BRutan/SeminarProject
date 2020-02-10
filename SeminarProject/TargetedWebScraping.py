@@ -55,25 +55,21 @@ class BrandQuery(object):
         * Pull all registered trademarks for passed list of companies 
         from WIPO website.
         Inputs:
-        * subsidiaries: Expecting list of subsidiaries to query.
+        * subsidiaries: Expecting container of subsidiaries to query.
         """
-        if not isinstance(subsidiaries, dict):
-            raise BaseException('subsidiaries needs to be a dictionary.')
-
         if not self.__driver:
             self.__StartBrowser()
-
         brands = {}
         searchSubs = {}
         cleanedSubs = {}
         cleanedToSub = {}
-        for sub in subsidiaries.keys():
+        for sub in subsidiaries:
             # Standardize by removing punctuation from subsidiary name, lower-case:
             cleaned = re.sub('[^a-z]', '', sub.lower())
             cleanedSubs[cleaned] = True
             cleanedToSub[cleaned] = sub
         # Enter subs to search for into search box:
-        subs = ', '.join([sub for sub in subsidiaries.keys()])
+        subs = ', '.join([sub for sub in subsidiaries])
         self.__inputBox.send_keys(subs)
         self.__inputBox.send_keys(Keys.RETURN)
         self.__resultsTable = self.__driver.find_element_by_xpath('//*[@id="results"]')
@@ -103,8 +99,6 @@ class BrandQuery(object):
                 if len(brands.keys()) > 600:
                     return brands
             except:
-                # Testing:
-                #self.__PrintAttributes(self.__WebElements)
                 self.__EndSession()
                 return brands
                 

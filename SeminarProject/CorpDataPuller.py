@@ -77,7 +77,10 @@ class CorpDataPuller(object):
         if self.__YFinAttrs:
             data = yf.Ticker(ticker)
             for attr in self.__YFinAttrs:
-                val = data.info[attr]
+                if attr not in data.info:
+                    val = None
+                else:
+                    val = data.info[attr]
                 val = val if not isinstance(val, str) else val.strip()
                 output[attr] = val
         
@@ -88,8 +91,13 @@ class CorpDataPuller(object):
             for label in self.__RequestAttrs:
                 cap = label.capitalize()
                 xp = f"//span[text()='{cap}']/following-sibling::span[1]"
-                s = tree.xpath(xp)[0]
-                output[label] = s.text_content()
+                s = None
+                try:
+                    s = tree.xpath(xp)[0]
+                    val = s.text_content()
+                except:
+                    val = None
+                output[label] = val
 
         output = { key.lower() : output[key] for key in output }
         
@@ -128,6 +136,8 @@ class CorpDataPuller(object):
             data = yf.Ticker(ticker.upper())
             prices = data.history(start = startDate.strftime('%Y-%m-%d'), end = endDate.strftime('%Y-%m-%d'))
         except BaseException as ex:
+            if 'no data' in str(ex).lower():
+                return {}
             raise Exception(str(ex));
 
         # Drop all unused columns:

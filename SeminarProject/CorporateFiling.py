@@ -120,6 +120,8 @@ class CorporateFiling(object):
         if not hasArg and 'date' in args:
             if isinstance(args['date'], str):
                 args['date'] = datetime.strptime(args['date'], '%Y%m%d')
+            elif isinstance(args['date'], n.datetime64):
+                args['date'] = CorporateFiling.NumpyDTToDT(args['date'])
             if not isinstance(args['date'], datetime):
                 errMsgs.append('date must be a datetime object or a string.')
             else:
@@ -186,6 +188,10 @@ class CorporateFiling(object):
     # Interface Methods:
     ###################
     # Testing:
+    @staticmethod
+    def NumpyDTToDT(dt):
+        ts = (dt - n.datetime64('1970-01-01T00:00:00Z')) / n.timedelta64(1, 's')
+        return datetime.utcfromtimestamp(ts)
     @staticmethod
     def InsertUniqueDescriptions(db):
         if db.TableExists('UniqueDescriptions'):
@@ -470,24 +476,9 @@ class CorporateFiling(object):
         # Document is divided into multiple <document> tags, containing text, financials, tables with footnotes:
         self.__subDocs = {}
         if links:
-            # Testing:
-            #rawTables = []
-            #cleanTables = []
-            #tenKPath = 'D:\\Git Repos\\SeminarProject\\SeminarProject\\SeminarProject\\Notes\\10Ks\\'
-            #path = 'D:\\Git Repos\\SeminarProject\\SeminarProject\\SeminarProject\\Notes\\TableNames\\'
-            #fileCount = 1
             for link in links:
                 soup = Soup(requests.get(link).text, 'lxml')
-                # Testing:
-                #if self.Ticker in ['GM', 'CCL', 'DRI', 'NCLH', 'HRB', 'MCD', 'ROST', 'VFC', 'BBY', 'EXPE', 'LKQ', 'NWL', 'M', 'NKE', 'DG', 'GRMN', 'PVH', 'LB', 'SBUX', 'MAR', 'LEN', 'TIF', 'LEG', 'JWN', 'LOW', 'F', 'MGM', 'WYNN', 'PHM', 'HOG', 'GPS', 'ORLY', 'RCL', 'KMX', 'AAP', 'BWA', 'UAA', 'TJX', 'YUM', 'LVS', 'GPC', 'HAS', 'MHK', 'TGT', 'AZO', 'CMG', 'ULTA', 'TSCO', 'KSS', 'CPRI']:
-                #    docPath = ''.join([tenKPath, '\\', self.Ticker, '\\DocNum_', str(fileCount), '.html' ])
-                #    SoupTesting.WriteSoupToFile(soup, docPath, prettify = True)
-                #    fileCount += 1
-                #rawTables.extend(soup.find_all('table'))
                 self.__CleanSoup(soup)
-                #cleanTables.extend(soup.find_all('table'))
-                #SoupTesting.PrintTableHTML(tables = rawTables, filePath = ''.join([path, 'Company HTML Tables Raw\\', self.Ticker, '_RawHTML.html']))
-                #SoupTesting.PrintTableHTML(tables = cleanTables, filePath = ''.join([path, 'Company HTML Tables Unwrapped\\', self.Ticker, '_UnwrappedHTML.html']))
                 docs = soup.find_all('document')
                 for doc in docs:
                     subDoc = SubDocument(type, steps, doc, self.Ticker, self.CompanyName)
@@ -501,13 +492,6 @@ class CorporateFiling(object):
                 subDoc = SubDocument(type, steps, doc, self.Ticker, self.CompanyName)
                 if subDoc.Name:
                     self.__subDocs[subDoc.Name] = subDoc
-
-        # Print all irregular tables:
-        # Testing:
-        #if TableItem.irregTables:
-        #    fileName = ''.join([path, '\\IrregTables\\IrregTables_', self.Ticker, '.html'])
-        #    SoupTesting.PrintTableHTML(tables = TableItem.irregTables, filePath = fileName)
-        #    TableItem.irregTables = []
 
     def __GetDocumentLinks(self, date, pullFinancials):
         """
@@ -553,8 +537,8 @@ class CorporateFiling(object):
         # Pull approriate link to document from searched link:
         try:
             soup = Soup(requests.get(link).text, 'lxml')
-        except Exception:
-            raise BaseException(message='\n'.join(['Could not grab data from link:', link]))
+        except BaseException as ex:
+            raise Exception('\n'.join(['Could not grab data from link:', link]))
         # Get filing date:
         self.__date = docFilingDate
         targetLinks = []

@@ -422,7 +422,11 @@ class MYSQLDatabase(object):
                 # Convert values to list if not already:
                 if not isinstance(columns[column], list):
                     columns[column] = list(columns[column])
-                currRowValue.append(wrap + str(columns[column][currRow]) + wrap)
+                # Convert None to NULL:
+                if columns[column][currRow] is None:
+                    currRowValue.append('NULL')
+                else:
+                    currRowValue.append(wrap + str(columns[column][currRow]) + wrap)
             rows.append("(" + ",".join(currRowValue) + ")")
             currRow += 1
         tableInsertQuery.append(','.join(rows))
