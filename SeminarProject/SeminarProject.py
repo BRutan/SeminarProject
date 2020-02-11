@@ -248,14 +248,14 @@ class SeminarProject(object):
 
     def GetTweets(self, toptweets = False):
         """
-        * Randomly sample all tweets and insert into associated table in schema.
+        * Pull tweets from Twitter using GoT library.
         """
         insertValues = {}
         puller = TwitterPuller()
         # Determine which companies have already been sampled:
-        query = ['SELECT A.Name, B.SearchTerm FROM Corporations AS A INNER JOIN ', '', ' AS B ON A.CorpID = B.CorpID WHERE B.SearchTerm IS NOT NULL;']
+        query = ['SELECT B.SearchTerm FROM Corporations AS A INNER JOIN ', '', ' AS B ON A.CorpID = B.CorpID WHERE B.SearchTerm IS NOT NULL;']
         db = self.DB
-        toPull = set(self.TickerToCorpAttribute)
+        toPull = set(self.TickerToCorpAttribute.index)
         for ticker in toPull:
             table = SeminarProject.__TweetTableSig % ticker.lower()
             query[1] = table
@@ -264,22 +264,22 @@ class SeminarProject(object):
                 toPull.remove(ticker)
         # Pull tweets for all corporations that haven't been sampled already:
         for ticker in toPull:
-            row = self.TickersSearchAttrs.loc[self.TickersSearchAttrs.index == ticker]
-            corpId = row['corpid']
-            addlSearch = row['addlsearchterms']
             args = {}
-            args['since'] = row['startdate']
-            args['until'] = row['enddate']
+            row = self.TickersSearchAttrs.loc[self.TickersSearchAttrs.index == ticker]
+            corpId = self.TickerToCorpAttribute.loc[self.TickerToCorpAttribute.index == ticker]['corpid'].values[0]
+            addlSearch = row['addlsearchterms'].values[0].split(',')
+            args['since'] = row['startdate'].values[0]
+            args['until'] = row['enddate'].values[0]
             args['interDaySampleSize'] = 50
-            args['termSampleSize'] = row['numbrands']
-            args['dateStep'] = row['daystep']
+            args['termSampleSize'] = row['numbrands'].values[0]
+            args['dateStep'] = row['daystep'].values[0]
             table = SeminarProject.__TweetTableSig % ticker.lower()
             # Skip all brands that were trademarked after the analysis start date, 
             # or are short or commond words:
-            vals = self.__FilterAndSampleSearchTerms(tickersToSearchTerms[ticker], self.TickerToBrands[ticker], args['termSampleSize'])
+            vals = self.__FilterAndSampleSearchTerms(, , )
             args['searchTerms'] = [val[0] for val in vals]
             # Append custom search terms if included in file:
-            args['searchTerms'].extend()
+            args['searchTerms'].extend(addlSearch)
             # Randomly sample tweets based upon args:
             for num, term in enumerate(args['searchTerms']):
                 puller.PullTweetsAndInsert(args, corpID, sub, table, term, db, self.__pullTopTweets, numTweets = args['interDaySampleSize'])
