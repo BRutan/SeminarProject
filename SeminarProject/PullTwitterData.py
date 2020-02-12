@@ -148,9 +148,12 @@ class TwitterPuller(object):
         """
         * Read serialized object/s from local pickle folder.
         """
+        data = []
+        if not os.path.exists(TwitterPuller.__PickleFolder):
+            os.mkdir(TwitterPuller.__PickleFolder)
+            return []
         pickleRE = re.compile(objName + '(_[0-9]+){0,1}\.pickle')
         matchFiles = [os.join(TwitterPuller.__PickleFolder, file) for file in os.listdir(TwitterPuller.__PickleFolder) if pickleRE.match(file)]
-        data = []
         for path in matchFiles:
             with open(path, 'rb') as f:
                 data.extend(pickle.load(f))
