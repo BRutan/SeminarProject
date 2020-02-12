@@ -40,8 +40,8 @@ class TwitterPuller(object):
         """
         tweetCriteria = got.manager.TweetCriteria()
         # Testing:
-        #tweetCriteria = tweetCriteria.setMaxTweets(args['periodSampleSize'])
-        tweetCriteria = tweetCriteria.setMaxTweets(5000)
+        tweetCriteria = tweetCriteria.setMaxTweets(args['periodSampleSize'])
+        #tweetCriteria = tweetCriteria.setMaxTweets(5000)
         tweetCriteria = tweetCriteria.setLang('en')
         corpid = args['corpid']
         ticker = args['ticker']

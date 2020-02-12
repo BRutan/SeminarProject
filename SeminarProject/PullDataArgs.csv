@@ -1,8 +1,11 @@
 ticker,startdate,enddate,daystep,periodsamplesize,numbrands,addlsearchterms,toptweets,overridebrands
-vwagy,12/31/2014,12/31/2015,1,100,100,Volkswagen,t,t
-gm,12/31/2014,12/31/2015,1,100,100,General Motors,t,t
-hmc,12/31/2014,12/31/2015,1,100,100,Honda,t,t
-tm,12/31/2014,12/31/2015,1,100,100,Toyota,t,t
-cmg,12/31/2014,12/31/2015,1,100,100,Chipotle,t,t
-mcd,12/31/2014,12/31/2015,1,100,100,Mcdonalds,t,t
-cake,12/31/2014,12/31/2015,1,100,100,Cheesecake Factory,t,t
+vwagy,12/31/2014,12/31/2015,1,1000,100,Volkswagen,t,f
+gm,12/31/2014,12/31/2015,1,1000,100,General Motors,t,f
+hmc,12/31/2014,12/31/2015,1,1000,100,Honda,t,f
+tm,12/31/2014,12/31/2015,1,1000,100,Toyota,t,f
+cmg,12/31/2014,12/31/2015,1,1000,100,Chipotle,t,f
+mcd,12/31/2014,12/31/2015,1,1000,100,Mcdonalds,t,f
+qsr,12/31/2014,12/31/2015,1,1000,100,"Outback Steakhouse, Flemings Steakhouse",t,f
+eat,12/31/2014,12/31/2015,1,1000,100,Chili's,t,f
+jack,12/31/2014,12/31/2015,1,1000,100,"Jack in the Box, Qdoba",t,f
+cake,12/31/2014,12/31/2015,1,1000,100,Cheesecake Factory,t,f

@@ -340,7 +340,8 @@ class MYSQLDatabase(object):
                 end = min(row + chunkSize, numRows)
                 for col in columns.keys():
                     currCols[col] = []
-                for row in range(row, end + 1):
+                rowRng = range(row, end + 1 if end != numRows else numRows)
+                for row in rowRng:
                     for col in columns.keys():
                         currCols[col].append(columns[col][row])
                 # Continue to insert rows if failed, if requested:
