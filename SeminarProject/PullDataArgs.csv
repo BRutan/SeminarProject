@@ -1,7 +1,8 @@
-ticker,startdate,enddate,daystep,numbrands,addlsearchterms,toptweets
-aapl,12/1/2018,12/1/2019,1,100,Apple,f
-amzn,12/31/2018,12/31/2019,1,100,Amazon,f
-cmg,12/31/2014,12/30/2015,1,100,Chipotle,f
-pzza,2/28/2018,8/31/2018,1,100,Papa John's,f
-vwagy,12/31/2014,12/30/2015,1,100,Volkswagen,f
-f,12/31/2014,12/30/2015,1,100,Ford,f
+ticker,startdate,enddate,daystep,periodsamplesize,numbrands,addlsearchterms,toptweets,overridebrands
+aapl,1/1/2018,12/31/2019,1,100,100,Apple,t,t
+amzn,12/31/2018,12/31/2019,1,100,100,Amazon,t,t
+cmg,12/31/2014,12/31/2015,1,100,100,Chipotle,t,t
+pzza,2/28/2018,8/31/2018,1,100,100,Papa John's,t,t
+vwagy,12/31/2014,12/31/2015,1,100,100,Volkswagen,t,t
+f,12/31/2014,12/31/2015,1,100,100,Ford,t,t
+wfc,,,,,,,,

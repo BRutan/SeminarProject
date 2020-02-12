@@ -39,7 +39,7 @@ def PullAllData():
     try:
         db = DataBase.MYSQLDatabase(args.username, args.pw, host, args.schema)
     except:
-        errs.append('Could not open MYSQL database instance.')
+        errs.append('Could not open MYSQL database instance %s.' % args.schema)
     try:
         inputs = GetPullInputs(args.inputpath)
     except BaseException as ex:
@@ -61,7 +61,7 @@ def PullAllData():
 
 def GetPullInputs(path):
     """
-    * Pull ticker, startdate, enddate, daystep, numbrands from local file.
+    * Pull ticker, startdate, enddate, daystep, numbrands, addlsearchtermsm, toptweets and overridebrands from local file.
     File is required to have these columns (case insensitive).
     """
     errs = []
@@ -72,8 +72,8 @@ def GetPullInputs(path):
         errs.append('File at path does not exist.')
     if  errs:
         raise Exception(''.join(errs))
-    reqCols = { 'ticker' : False, 'startdate' : False, 'enddate' : False, 'daystep' : False, 'numbrands' : False, 'addlsearchterms' : False,
-                'toptweets' : False }
+    reqCols = { 'ticker' : False, 'startdate' : False, 'enddate' : False, 'daystep' : False, 'numbrands' : False, 'addlsearchterms' : False, 
+               'periodsamplesize' : False, 'toptweets' : False, 'overridebrands' : False }
     data = pd.read_csv(path)
     data = data.rename(columns = { col : col.strip().lower() for col in data.columns })
     invalidCols = []
@@ -91,11 +91,13 @@ def GetPullInputs(path):
         errs.append(''.join(['startdate and enddate columns must use MM/DD/YYYY format.']))
     if errs:
         raise BaseException('\n'.join(errs))
-    # Convert date strings to datetimes:
+    
+    # Convert data to appropriate format downstream:
     data['startdate'] = [datetime.strptime(dt, '%m/%d/%Y') for dt in data['startdate']]
     data['enddate'] = [datetime.strptime(dt, '%m/%d/%Y') for dt in data['enddate']]
     data['addlsearchterms'] = [val.split(';') for val in data['addlsearchterms']]
     data['toptweets'] = [True if val.lower() == 't' else False for val in data['toptweets']]
+    data['overridebrands'] = [True if val.lower() == 't' else False for val in data['overridebrands']]
 
     return data
 
@@ -110,7 +112,7 @@ def IsPositive(val):
         return val
     else:
         raise argparse.ArgumentTypeError
-
+    
 if __name__ == '__main__':
     PullAllData()
     

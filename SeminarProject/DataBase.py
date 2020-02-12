@@ -300,13 +300,13 @@ class MYSQLDatabase(object):
             if useDataFrame:
                 # Use primary key as index if specified
                 output = DataFrame.from_dict(output)
-                if dataframeIndex and dataframeIndex in query:
+                if dataframeIndex and dataframeIndex.lower() in query:
                     # Skip using supplied dataframe index if column not used in SELECT statement:
-                    output.set_index(dataframeIndex)
+                    output.set_index(dataframeIndex.lower())
 
             return output
 
-    def InsertInChunks(self, tableName, columns, chunkSize, schema = None, skipExceptions = False):
+    def InsertInChunks(self, tableName, columns, chunkSize, schema = None, skipExceptions = False, logFile = None):
         """
         * Insert rows into table using chunk size.
         Inputs:
@@ -317,6 +317,7 @@ class MYSQLDatabase(object):
         Optional Inputs:
         * schema: Specify the schema for the table (string).
         * skipExceptions: Put True to continue inserting if some rows failed to insert (boolean).
+        * logFile: Path to log file detailing exceptions (string, or None by default).
         """
         # Validate function parameters:
         if not schema:
@@ -339,7 +340,7 @@ class MYSQLDatabase(object):
                 end = min(row + chunkSize, numRows)
                 for col in columns.keys():
                     currCols[col] = []
-                for row in range(row, end):
+                for row in range(row, end + 1):
                     for col in columns.keys():
                         currCols[col].append(columns[col][row])
                 # Continue to insert rows if failed, if requested:
@@ -347,17 +348,17 @@ class MYSQLDatabase(object):
                     self.InsertValues(tableName, currCols, schema)
                 except:
                     pass
-                row += 1
+                row += chunkSize
         else:
             while row < numRows:
                 end = min(row + chunkSize, numRows)
                 for col in columns.keys():
                     currCols[col] = []
-                for row in range(row, end):
+                for row in range(row, end + 1):
                     for col in columns.keys():
                         currCols[col].append(columns[col][row])
                 self.InsertValues(tableName, currCols, schema)
-                row += 1
+                row += chunkSize
     def CreateTemporaryTables(self, tableName, columns):
         """
         * Create temporary table.

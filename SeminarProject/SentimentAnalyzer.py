@@ -4,6 +4,7 @@
 # Description:
 # * 
 
+from pandas import DataFrame
 from textblob import TextBlob
 from nltk.stem.wordnet import WordNetLemmatizer
 from nltk.tokenize import TweetTokenizer
@@ -28,7 +29,7 @@ class SentimentAnalyzer(object):
         return score
 
     @staticmethod
-    def CalculateSentiments(data, pKey, textColumn):
+    def CalculateSentiments(data, textColumn = None, pkey = None):
         """
         * Calculate sentiment score for each text element
         in data.
@@ -39,16 +40,25 @@ class SentimentAnalyzer(object):
         * textColumn: String denoting column name in data dictionary
         associated with text to analyze.
         """
-        sentiments = {}
-        for row, text in enumerate(data[textColumn]):
-            blob = TextBlob(text)
-            key = data[pKey][row]
-            score = 0
-            for sentence in blob.sentences:
-                score += sentence.sentiment.polarity
-            sentiments[key] = score
+        # Output as list if passed list or dataframe:
+        if isinstance(data, list):
+            sentiments = []
+            for text in data:
+                sentiments.append(SentimentAnalyzer.CalculateSentiment(text))
+        elif isinstance(data, DataFrame):
+            if textColumn is None:
+                raise Exception('Need to provide text column if passing dataframe.')
+            sentiments = []
+            for text in data[textColumn].values:
+                sentiments.append(SentimentAnalyzer.CalculateSentiment(text))
+        else:
+            # Output as dictionary if passed a dictionary:
+            sentiments = {}
+            for row, text in enumerate(data[textColumn]):
+                sentiments[data[pkey][row]] = SentimentAnalyzer.CalculateSentiment(text)
 
         return sentiments
+
 
     # Functions:
     def GenerateSentiment(self, tweetText):
