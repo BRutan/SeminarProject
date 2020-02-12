@@ -4,7 +4,7 @@
     <SchemaVersion>2.0</SchemaVersion>
     <ProjectGuid>3b087734-5889-4d64-8158-eef5659fedd8</ProjectGuid>
     <ProjectHome>.</ProjectHome>
-    <StartupFile>PullTimeSeries_RunScript.py</StartupFile>
+    <StartupFile>PullAllData_RunScript.py</StartupFile>
     <SearchPath>
     </SearchPath>
     <WorkingDirectory>.</WorkingDirectory>
@@ -13,7 +13,7 @@
     <RootNamespace>SeminarProject</RootNamespace>
     <InterpreterId>Global|PythonCore|3.6</InterpreterId>
     <LaunchProvider>Standard Python launcher</LaunchProvider>
-    <CommandLineArguments>"root" "Correlation$" "corp_twitter_data" "aapl" "output.csv" --datestep "w"</CommandLineArguments>
+    <CommandLineArguments>"root" "Correlation$" "corp_twitter_data" "D:\Git Repos\SeminarProject\SeminarProject\SeminarProject\PullDataArgs.csv"</CommandLineArguments>
     <EnableNativeCodeDebugging>False</EnableNativeCodeDebugging>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)' == 'Debug' ">

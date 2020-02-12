@@ -52,11 +52,17 @@ def PullAllData():
     # Perform key steps:
     ##########################
     seminar = SeminarProject(inputs, db)
+    print("Creating tables.")
     seminar.CreateTables()
+    print("Inserting corporation attributes.")
     seminar.InsertCorpAttributes()
+    print("Inserting historical prices.")
     seminar.GetHistoricalData()
+    print("Inserting subsidiaries.")
     seminar.GetSubsidiaries()
+    print("Inserting brands.")
     seminar.GetBrands()
+    print("Gathering and inserting tweet data.")
     seminar.GetTweets()
 
 def GetPullInputs(path):
