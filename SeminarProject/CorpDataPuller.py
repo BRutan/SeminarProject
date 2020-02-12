@@ -10,7 +10,7 @@ import lxml
 from lxml import html
 from math import log
 import requests
-import requests_cache
+#import requests_cache
 import numpy as np
 from pandas import DataFrame
 import yfinance as yf
@@ -22,7 +22,7 @@ class CorpDataPuller(object):
     * Pull historical returns, company data for ticker.
     """
     __haveAPIKeys = False
-    __session = requests_cache.CachedSession(cache_name = 'cache', backend = 'sqlite', expire_after = timedelta(days=3))
+    #__session = requests_cache.CachedSession(cache_name = 'cache', backend = 'sqlite', expire_after = timedelta(days=3))
     __validPriceTypes = { pType.lower() : True for pType in ['Open', 'High', 'Low', 'Close', 'Volume']}
     __allAttributes = ['language', 'region', 'quoteType', 'triggerable', 'quoteSourceName', 'currency', 'tradeable', 'exchange', 'shortName', 'longName', 'messageBoardId', 
                          'exchangeTimezoneName', 'exchangeTimezoneShortName', 'gmtOffSetMilliseconds', 'market', 
