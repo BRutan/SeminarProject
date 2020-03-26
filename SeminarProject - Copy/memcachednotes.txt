@@ -1,5 +1,0 @@
-schtasks /create /sc onstart /tn memcached /tr "%temp% -m 512"
-
-
-# Configure memcache to allow large objects:
-https://stackoverflow.com/questions/1440722/maximum-size-of-object-that-can-be-saved-in-memcached-with-memcache-py

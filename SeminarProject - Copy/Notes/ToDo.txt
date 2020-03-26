@@ -1,5 +1,0 @@
-ToDo:
-
-* Fix TableItem.__ExtractName() to check if font is within row. 
-* Output all table names, fix logic for tables that do not have appropriate name.
-

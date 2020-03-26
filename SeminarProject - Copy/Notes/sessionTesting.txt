@@ -1,9 +1,0 @@
-###### Testing BeautifulSoup: Put into interactive window
-from bs4 import BeautifulSoup as Soup
-import requests
-import re
-link = 'https://www.sec.gov/Archives/edgar/data/1018724/000101872419000004/0001018724-19-000004.txt'
-soup = Soup(requests.get(link).text, 'lxml')
-header = re.compile('.*font-weight:bold.*', re.IGNORECASE| re.UNICODE)
-titlePattern = re.compile('.*vertical-align:top;padding-left.*', re.IGNORECASE| re.UNICODE)
-docs = soup.find_all('document')

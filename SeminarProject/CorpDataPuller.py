@@ -23,7 +23,7 @@ class CorpDataPuller(object):
     """
     __haveAPIKeys = False
     #__session = requests_cache.CachedSession(cache_name = 'cache', backend = 'sqlite', expire_after = timedelta(days=3))
-    __validPriceTypes = { pType.lower() : True for pType in ['Open', 'High', 'Low', 'Close', 'Volume']}
+    __validPriceTypes = set(['Open', 'High', 'Low', 'Close', 'Adj Close', 'Volume'])
     __allAttributes = ['language', 'region', 'quoteType', 'triggerable', 'quoteSourceName', 'currency', 'tradeable', 'exchange', 'shortName', 'longName', 'messageBoardId', 
                          'exchangeTimezoneName', 'exchangeTimezoneShortName', 'gmtOffSetMilliseconds', 'market', 
                          'esgPopulated', 'firstTradeDateMilliseconds', 'priceHint', 'postMarketChangePercent', 'postMarketTime', 'postMarketPrice', 'postMarketChange', 
@@ -109,46 +109,36 @@ class CorpDataPuller(object):
         Inputs:
         * startDate: Expecting datetime/string with format YYYY-MM-DD.
         * endDate: Expecting datetime/string with format YYYY-MM-DD. 
-        * ticker: Security ticker string.
+        * ticker: string security ticker or list.
         Optional:
-        * priceType: List of price types, or single string denoting price type, or 'all' if want all. Must be in ValidPriceTypes().
+        * priceType: List of price types, or single string denoting price type, or 'all' if want all. 
+        Must be in ValidPriceTypes(). Is 'Adj Close' if omitted.
         Output:
         * Returns dataframe filled with asset prices with Date and PriceTypes as columns for ticker.
         """
         errs = []
-        if not isinstance(ticker, str):
-            errs.append('ticker must be a string.')
+        if not isinstance(ticker, (str, list)):
+            errs.append('ticker must be a string or list of strings.')
+        elif isinstance(ticker, str):
+            ticker = [ticker]
         if priceTypes:
             errs.extend(self.__CheckPriceTypes(priceTypes))
+        else:
+            priceTypes = ['Adj Close']
         startDate, endDate, dateErrs = CorpDataPuller.__ConvertDates(startDate, endDate)
         errs.extend(dateErrs)
         if errs:
             raise BaseException('\n'.join(errs))
-        
-        ticker = ticker.lower()
         # Swap date order if necessary:
         if startDate > endDate:
             copy = endDate
             endDate = startDate
             startDate = copy
-
-        try:
-            data = yf.Ticker(ticker.upper())
-            prices = data.history(start = startDate.strftime('%Y-%m-%d'), end = endDate.strftime('%Y-%m-%d'))
-        except BaseException as ex:
-            if 'no data' in str(ex).lower():
-                return {}
-            raise Exception(str(ex));
-
-        # Drop all unused columns:
-        prices = prices.rename(columns={col : col.lower() for col in prices.columns})
-        cols = set(prices.columns)
-        targetCols = set(self.__PriceTypes)
-        dropCols = cols - targetCols
-        if dropCols:
-            prices = prices.drop(dropCols, axis=1)
         
-        return prices
+        coldiffs = set(CorpDataPuller.__validPriceTypes) - set(priceTypes) 
+        prices = yf.download(tickers = ticker, start = startDate.strftime('%Y-%m-%d'), end = endDate.strftime('%Y-%m-%d'))
+        # Return prices with only requested columns:
+        return prices.drop([col for col in prices.columns if col[0] in coldiffs], axis = 1)
 
     ###################
     # Private Helpers:
@@ -189,14 +179,12 @@ class CorpDataPuller(object):
             errs.append('priceType is invalid.')
         elif isinstance(priceTypes, str) and priceTypes == 'all':
             self.__PriceTypes = CorpDataPuller.__validPriceTypes.keys()
-        elif isinstance(priceTypes, list) and not priceTypes:
+        elif not priceTypes:
             errs.append('Need at least one priceType.')
         elif isinstance(priceTypes, list):
-            invalid = [pType for pType in priceTypes if pType.lower() not in CorpDataPuller.__validPriceTypes]
+            invalid = [pType for pType in priceTypes if pType.capitalize() not in CorpDataPuller.__validPriceTypes]
             if invalid:
                 errs.append(''.join(['The following priceTypes are invalid: ', ','.join(invalid)]))
-            else:
-                self.__PriceTypes  = [pType.lower() for pType in priceTypes]
         else:
             errs.append('priceType must be a string or a list.')
         return errs
