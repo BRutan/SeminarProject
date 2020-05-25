@@ -64,6 +64,7 @@ def PullAllData():
     seminar.GetBrands()
     print("Gathering and inserting tweet data.")
     seminar.GetTweets()
+    print("Finished with all key steps.")
 
 def GetPullInputs(path):
     """

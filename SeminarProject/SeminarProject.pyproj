@@ -25,6 +25,7 @@
     <EnableUnmanagedDebugging>false</EnableUnmanagedDebugging>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="chipotle_model.py" />
     <Compile Include="PullTimeSeries_RunScript.py">
       <SubType>Code</SubType>
     </Compile>
@@ -53,6 +54,9 @@
     </Compile>
     <Compile Include="SentimentAnalyzer.py" />
     <Compile Include="TradeBacktester.py">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="VaderModel.py">
       <SubType>Code</SubType>
     </Compile>
   </ItemGroup>

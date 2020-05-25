@@ -16,6 +16,7 @@ import os
 from pandas import DataFrame, concat
 import re
 from SentimentAnalyzer import SentimentAnalyzer
+from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
 def IsAscii(string):
     try:
@@ -25,7 +26,7 @@ def IsAscii(string):
     return True
 
 def CalculateSentimentScores():
-# Get command line arguments:
+    # Get command line arguments:
     parser = argparse.ArgumentParser(prog='SeminarProject')
     parser.add_argument('username', type = str, help="Username for MYSQL instance.")
     parser.add_argument('pw', type = str, help="Password to MYSQL instance.")
@@ -138,9 +139,10 @@ def CalculateSentimentScores():
         return
     else:
         # Calculate sentiment scores:
+        analyzer = SentimentIntensityAnalyzer()
         results = {col[col.find('.') + 1:len(col)] : results[col] for col in results}
-        scores = SentimentAnalyzer.CalculateSentiments(results, 'tweet', 'tweetid')
-        results['SentimentScores'] = list(scores.values()) 
+        scores = [analyzer.polarity_scores(tweet) for tweet in results['Text']]
+        results['SentimentScores'] = list(scores.values())
         results = DataFrame.from_dict(results)
         if args.filterzeros:
             results = results.loc[results['SentimentScores'] != 0]
