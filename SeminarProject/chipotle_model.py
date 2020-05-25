@@ -44,7 +44,6 @@ use_vif_test = True
 ##########################
 #### LOAD ENVIRONMENT ####
 ##########################
-
 import pandas as pd
 import numpy as np
 from sklearn import *
@@ -68,7 +67,6 @@ plt.rc('ytick', labelsize=8)
 ####################
 #### LOAD DATA  ####
 ####################
-
 # Read in training data
 input_file_path = input_directory + "/" + train_file_name + ".csv"
 #columns_file_path = input_directory + "/" + column_name_file + ".csv"

@@ -41,7 +41,7 @@ class VaderSentimentModel:
             raise Exception('\n'.join(errs))
         analyzer = SentimentIntensityAnalyzer()
         scores = [analyzer.polarity_scores(text)['compound'] for text in data[textCol]]
-        data = { col : data[col] for col in data.columns if col != textCol }
+        data = { col : data[col] for col in data.columns }
         data[scoreCol] = scores
         
         return DataFrame(data)
