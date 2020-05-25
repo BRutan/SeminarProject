@@ -16,7 +16,7 @@ import os
 from pandas import DataFrame, concat
 import re
 from SentimentAnalyzer import SentimentAnalyzer
-from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+from VaderModel import VaderSentimentModel
 
 def IsAscii(string):
     try:
@@ -47,7 +47,6 @@ def CalculateSentimentScores():
     #lag = None
     dates = []
     errs = []
-
     if os.path.exists(args.path):
         errs.append('File at path already exists.')
     elif '.csv' not in args.path:
@@ -81,11 +80,10 @@ def CalculateSentimentScores():
     corpid = db.ExecuteQuery(query, getResults=True)
     if not corpid is None and not corpid['corpid'][0]:
         errs.append('Ticker %s is not present in corporations table.' % args.ticker)
-    if not db.TableExists('tweetdata'):
+    if not db.TableExists('tweets_%s' % args.ticker):
         errs.append('tweetdata table does not exist.')
-    
     if errs:
-        raise BaseException('\n'.join(errs))
+        raise Exception('\n'.join(errs))
     corpid = corpid['corpid'][0]
 
     # Use stepping if necessary:
@@ -118,7 +116,7 @@ def CalculateSentimentScores():
             db.InsertValues('targetdates', dates)
     # Get all the tweet data:
     query = ['SELECT * FROM']
-    query.append('tweetdata')
+    query.append('tweets_%s' % args.ticker)
     query.append('AS A')
     if datestep:
         query.append('INNER JOIN targetdates AS B ON A.date = B.date')
@@ -129,24 +127,20 @@ def CalculateSentimentScores():
         query.append('AND A.date <= ')
         query.append(args.dateperiod[1])
     query = ' '.join(query)
-    results = db.ExecuteQuery(query, getResults = True)
+    results = db.ExecuteQuery(query, getResults = True, useDataFrame = True)
     # Remove temporary table for date stepping:
     if db.TableExists('targetdates'):
         db.ExecuteQuery('DROP TABLE targetdates')
     # Exit if no matching tweets in table:
-    if not results:
+    if (isinstance(results, DataFrame) and len(results) == 0) or (isinstance(results, dict) and not results):
         print(''.join(["No tweets available for ", args.ticker.upper(), '.']))
         return
     else:
         # Calculate sentiment scores:
-        analyzer = SentimentIntensityAnalyzer()
-        results = {col[col.find('.') + 1:len(col)] : results[col] for col in results}
-        scores = [analyzer.polarity_scores(tweet) for tweet in results['Text']]
-        results['SentimentScores'] = list(scores.values())
-        results = DataFrame.from_dict(results)
+        analyzer = VaderSentimentModel()
+        results = analyzer.GenerateSentimentScores(results, 'tweet', 'sentimentscore')
         if args.filterzeros:
             results = results.loc[results['SentimentScores'] != 0]
-        results = results.set_index('tweetid')
         results = results.drop('corpid', axis=1)
         results = results.rename(columns = {col : col.capitalize() for col in results.columns})
         print("Generating sentiment score report at:")
