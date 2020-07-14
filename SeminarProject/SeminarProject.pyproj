@@ -26,6 +26,9 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="chipotle_model.py" />
+    <Compile Include="Modeling\BagOfWords.py">
+      <SubType>Code</SubType>
+    </Compile>
     <Compile Include="PullTimeSeries_RunScript.py">
       <SubType>Code</SubType>
     </Compile>
@@ -62,6 +65,9 @@
   </ItemGroup>
   <ItemGroup>
     <InterpreterReference Include="Global|PythonCore|3.6" />
+  </ItemGroup>
+  <ItemGroup>
+    <Folder Include="Modeling\" />
   </ItemGroup>
   <Import Project="$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)\Python Tools\Microsoft.PythonTools.targets" />
   <!-- Uncomment the CoreCompile target to enable the Build command in
