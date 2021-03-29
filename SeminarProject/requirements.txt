@@ -86,7 +86,7 @@ pycodestyle==2.5.0
 pydata==1.0.0
 pyflakes==2.1.1
 PyGetWindow==0.0.8
-Pygments==2.4.2
+Pygments==2.7.4
 pylint==2.4.2
 PyMsgBox==1.0.7
 pyparsing==2.4.2
